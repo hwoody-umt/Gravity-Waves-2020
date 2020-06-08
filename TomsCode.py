@@ -5,11 +5,14 @@ from numpy.core.defchararray import lower
 import os
 
 ########## USER INPUT SECTION ##########
-def getUserInputAny(prompt):
+def getUserInputFile(prompt):
     print(prompt)
     userInput = ""
     while not userInput:
         userInput = input()
+        if not os.path.isdir(userInput):
+            print("Please enter a valid directory:")
+            userInput = ""
     return userInput
 
 
@@ -26,12 +29,12 @@ def getUserInputTF(prompt):
         return False
 
 
-dataSource = getUserInputAny("Enter path to data input directory: ")
-savePath = getUserInputAny("Enter path to data output directory: ")
+dataSource = getUserInputFile("Enter path to data input directory: ")
+savePath = getUserInputFile("Enter path to data output directory: ")
 showPowerSurfaces = getUserInputTF("Do you want to show power surfaces?")
 saveData = getUserInputTF("Do you want to save the output data?")
 # MATLAB code has lower and upper altitude cut-offs and latitude
-# However, these should be retrieved from PBL calculation and metadata, and upper data should be managed/cleaned
+# I've changed these to be read in from the data
 
 # For debugging, print results
 print("Running with the following parameters:")
@@ -91,7 +94,7 @@ for file in os.listdir(dataSource):
             # Read in the data
             data = pd.read_csv(os.path.join(savePath, ".temp.txt"), delim_whitespace=True)
 
-            ########## NEED TO FIND PBL HERE ##########
+            ########## NEED CODE TO FIND PBL HERE ##########
 
             # Find the end of usable data
             badRows = []
@@ -103,7 +106,20 @@ for file in os.listdir(dataSource):
             print("Dropping "+str(len(badRows))+" rows containing unusable data")
             data = data.drop(data.index[badRows])
 
-            # Actually do the analysis here...
+            ########## PERFORMING ANALYSIS ##########
+
+            # Get u and v (east & north?) components of wind
+            u = -data['Ws'] * np.sin(data['Wd']*np.pi/180)
+            v = -data['Ws'] * np.cos(data['Wd']*np.pi/180)
+
+            # Next, figure out what the preprocessing is actually accomplishing and why.
+
+            # Then, work on the coriolis frequency... dependent on latitude, but
+            # also assumed to be constant? Use mean latitude? Or treat as variable?
+
+            # Finally, get to the wavelet transform and really fuck some shit up.
+
+            ########## FINISHED ANALYSIS ##########
 
             os.remove(os.path.join(savePath, ".temp.txt"))
             print("Finished analysis.")
