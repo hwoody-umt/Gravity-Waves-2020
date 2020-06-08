@@ -82,14 +82,14 @@ for file in os.listdir(dataSource):
                 contents = contents[:index]
             contents = "\n".join(contents)  # Reassemble string
             print("Writing data to temp file")
-            f = open(os.path.join(dataSource, "temp.txt"), 'w')
+            f = open(os.path.join(savePath, ".temp.txt"), 'w')
             f.write(contents)
             f.close()
             del index
             del contents
 
             # Read in the data
-            data = pd.read_csv(os.path.join(dataSource, "temp.txt"), delim_whitespace=True)
+            data = pd.read_csv(os.path.join(savePath, ".temp.txt"), delim_whitespace=True)
 
             ########## NEED TO FIND PBL HERE ##########
 
@@ -103,6 +103,9 @@ for file in os.listdir(dataSource):
             print("Dropping "+str(len(badRows))+" rows containing unusable data")
             data = data.drop(data.index[badRows])
 
+            # Actually do the analysis here...
+
+            os.remove(os.path.join(savePath, ".temp.txt"))
             print("Finished analysis.")
 
 print("\nAnalyzed all .txt files in folder "+dataSource)
