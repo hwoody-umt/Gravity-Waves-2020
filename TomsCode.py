@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from numpy.core.defchararray import lower
 import os
+from io import StringIO
 
 ########## USER INPUT SECTION ##########
 def getUserInputFile(prompt):
@@ -65,7 +66,7 @@ for file in os.listdir(dataSource):
             if line.rstrip() == "Profile Data:":
                 isProfile = True
                 contents = f.read()
-                print("File "+file+" contains GRAWMET profile data.")
+                print("File contains GRAWMET profile data")
                 break
         f.close()
         if not isProfile:
@@ -84,27 +85,32 @@ for file in os.listdir(dataSource):
             if index >= 0:  # Remove footer, if found
                 contents = contents[:index]
             contents = "\n".join(contents)  # Reassemble string
-            print("Writing data to temp file")
-            f = open(os.path.join(savePath, ".temp.txt"), 'w')
-            f.write(contents)
-            f.close()
             del index
-            del contents
 
             # Read in the data
-            data = pd.read_csv(os.path.join(savePath, ".temp.txt"), delim_whitespace=True)
+            print("Constructing a data frame")
+            data = pd.read_csv(StringIO(contents), delim_whitespace=True)
+            del contents
 
             ########## NEED CODE TO FIND PBL HERE ##########
 
             # Find the end of usable data
             badRows = []
             for row in range(data.shape[0]):
-                for col in range(data.shape[1]):
-                    if data.iloc[row, col] == 999999.0:  # This value seems to mark post-ascent data
-                        badRows.append(row)
-                        break
+                if not str(data['Rs'].loc[row]).replace('.', '', 1).isdigit():  # Check for nonnumeric or negative rise rate
+                    badRows.append(row)
+                else:
+                    for col in range(data.shape[1]):
+                        if data.iloc[row, col] == 999999.0:  # This value appears a lot and is obviously wrong
+                            badRows.append(row)
+                            break
             print("Dropping "+str(len(badRows))+" rows containing unusable data")
             data = data.drop(data.index[badRows])
+
+            plt.plot(data['T'], data['Alt'])
+            plt.ylabel("Altitude [m]")
+            plt.xlabel("Temperature [deg Celsius]")
+            plt.show()
 
             ########## PERFORMING ANALYSIS ##########
 
@@ -113,6 +119,8 @@ for file in os.listdir(dataSource):
             v = -data['Ws'] * np.cos(data['Wd']*np.pi/180)
 
             # Next, figure out what the preprocessing is actually accomplishing and why.
+            # It seems to be creating a new data set by picking several times and then
+            # doing a linear interpolation between them? Why?
 
             # Then, work on the coriolis frequency... dependent on latitude, but
             # also assumed to be constant? Use mean latitude? Or treat as variable?
@@ -121,7 +129,6 @@ for file in os.listdir(dataSource):
 
             ########## FINISHED ANALYSIS ##########
 
-            os.remove(os.path.join(savePath, ".temp.txt"))
             print("Finished analysis.")
 
 print("\nAnalyzed all .txt files in folder "+dataSource)
