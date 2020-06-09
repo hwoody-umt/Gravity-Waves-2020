@@ -1,9 +1,10 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-from numpy.core.defchararray import lower
-import os
-from io import StringIO
+import numpy as np  # Numbers (like pi) and math
+import matplotlib.pyplot as plt  # Easy plotting
+import pandas as pd  # Convenient data formatting, and who doesn't want pandas
+from numpy.core.defchararray import lower  # For some reason I had to import this separately
+import os  # File reading and input
+from io import StringIO  # Used to run strings through input/output functions
+import pywt  # Library PyWavelets, for wavelet transforms
 
 ########## USER INPUT SECTION ##########
 def getUserInputFile(prompt):
@@ -31,18 +32,21 @@ def getUserInputTF(prompt):
 
 
 dataSource = getUserInputFile("Enter path to data input directory: ")
-savePath = getUserInputFile("Enter path to data output directory: ")
-showPowerSurfaces = getUserInputTF("Do you want to show power surfaces?")
+showPlots = getUserInputTF("Do you want to display plots for analysis?")
 saveData = getUserInputTF("Do you want to save the output data?")
+if saveData:
+    savePath = getUserInputFile("Enter path to data output directory: ")
+else:
+    savePath = "NA"
 # MATLAB code has lower and upper altitude cut-offs and latitude
 # I've changed these to be read in from the data
 
 # For debugging, print results
 print("Running with the following parameters:")
-print("Path to input data: "+dataSource)
-print("Path to output data: "+savePath)
-print("Show power surfaces: "+str(showPowerSurfaces))
-print("Save data: "+str(saveData)+"\n")
+print("Path to input data: /"+dataSource+"/")
+print("Display plots: "+str(showPlots))
+print("Save data: "+str(saveData))
+print("Path to output data: "+savePath+"\n")
 
 ########## FILE RETRIEVAL SECTION ##########
 
@@ -104,13 +108,17 @@ for file in os.listdir(dataSource):
                         if data.iloc[row, col] == 999999.0:  # This value appears a lot and is obviously wrong
                             badRows.append(row)
                             break
-            print("Dropping "+str(len(badRows))+" rows containing unusable data")
+            if len(badRows) > 0:
+                print("Dropping "+str(len(badRows))+" rows containing unusable data")
             data = data.drop(data.index[badRows])
 
-            plt.plot(data['T'], data['Alt'])
-            plt.ylabel("Altitude [m]")
-            plt.xlabel("Temperature [deg Celsius]")
-            plt.show()
+            #Make cursory inspection plots, dependent on user input showPlots
+            if showPlots:
+                print("Displaying input data")
+                plt.plot(data['Long.'], data['Lat.'])
+                plt.ylabel("Latitude")
+                plt.xlabel("Longitude")
+                plt.show()
 
             ########## PERFORMING ANALYSIS ##########
 
@@ -125,10 +133,14 @@ for file in os.listdir(dataSource):
             # Then, work on the coriolis frequency... dependent on latitude, but
             # also assumed to be constant? Use mean latitude? Or treat as variable?
 
-            # Finally, get to the wavelet transform and really fuck some shit up.
+            # The wavelet transform code involves multiple imported methods, so
+            # I need to look the PyWavelet library and really
+            # understand the math behind the wavelet transform in order to adapt
+            # the code to python.
 
             ########## FINISHED ANALYSIS ##########
 
             print("Finished analysis.")
 
-print("\nAnalyzed all .txt files in folder "+dataSource)
+print("\nAnalyzed all .txt files in folder /"+dataSource+"/")
+
