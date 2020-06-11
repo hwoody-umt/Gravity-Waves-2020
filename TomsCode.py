@@ -96,8 +96,6 @@ for file in os.listdir(dataSource):
             data = pd.read_csv(StringIO(contents), delim_whitespace=True)
             del contents
 
-            ########## NEED CODE TO FIND PBL HERE ##########
-
             # Find the end of usable data
             badRows = []
             for row in range(data.shape[0]):
@@ -122,9 +120,53 @@ for file in os.listdir(dataSource):
 
             ########## PERFORMING ANALYSIS ##########
 
-            # Get u and v (east & north?) components of wind
-            u = -data['Ws'] * np.sin(data['Wd']*np.pi/180)
-            v = -data['Ws'] * np.cos(data['Wd']*np.pi/180)
+            #Calculate variables needed for further analysis
+
+            tk = data['T'] + 273.15  # Temperature in Kelvin
+            hi = data['Alt'] - data['Alt'][1]  # height above ground in meters
+            epsilon = 0.622  # epsilon, unitless constant
+
+            # saturation vapor pressure
+            es = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T'])))  # hPa
+
+            # vapor pressure
+            e = es * data['Hu']  # hPa
+
+            # water vapor mixing ratio
+            rvv = (epsilon * e) / (data['P'] - e)  # unitless
+
+            # potential temperature
+            pot = (1000.0 ** 0.286) * tk / (data['P'] ^ 0.286)  # kelvin
+
+            # virtual potential temperature
+            vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
+
+            # u and v (east & north?) components of wind speed
+            u = -data['Ws'] * np.sin(data['Wd'] * np.pi / 180)
+            v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
+
+            g = 9.81  # m/s/s
+
+
+
+
+            def PBLri(vpt,Alt,g,u,v):
+                # This function calculates richardson number. We then
+                # search for where Ri(z) is near 0.25 and interpolates to get the height
+                # z where Ri(z) = 0.25.
+                #
+                # INPUTS: temperature in C, temperature in K, altitude in meters, height in
+                # meters, pressure in hPa, humidity as decimal value, wind speed in m/s,
+                # and wind direction in degrees.
+                #
+                # OUTPUTS: richardson number
+                ri = (((vpt - vpt[0]) / vpt[0]) * (Alt - Alt[0]) * g) / (u ** 2 + v ** 2)
+
+                # Richardson number. If surface wind speeds are zero, the first data point
+                # will be an inf or NAN.
+                return ri
+
+
 
             # Next, figure out what the preprocessing is actually accomplishing and why.
             # It seems to be creating a new data set by picking several times and then
