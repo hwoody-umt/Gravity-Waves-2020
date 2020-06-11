@@ -7,21 +7,22 @@ from io import StringIO  # Used to run strings through input/output functions
 import pywt  # Library PyWavelets, for wavelet transforms
 
 ########## Function definitions, to be used later ##########
-
-def pblri(vpt, u, v, hi):
-    # This function calculates richardson number. It then
-    # searches for where Ri(z) is near 0.25 and interpolates to get the height
-    # z where Ri(z) = 0.25.
-    #
-    # INPUTS: write what these are eventually
-    #
-    # OUTPUTS: PBL height based on RI
-
     g = 9.81  # m/s/s
-    ri = (((vpt - vpt[0]) / vpt[0]) * hi * g) / (u ** 2 + v ** 2)
-    # Richardson number. If surface wind speeds are zero, the first data point
-    # will be an inf or NAN.
-    return np.interp(0.25, ri, hi)
+    alt_cap_lt = [] 
+
+def alt_cap(Alt):
+    for heights in Alt:
+        Alt >= 5000
+        continue #ends loop at 5000m and drops all height values above 5000m
+        alt_cap_lt.append(heights) #adds heights below 5000m to new list
+    return alt_cap_lt
+
+alt_cap_lt0 = alt_cap_lt(1) #defines the ground level altitude
+hi = alt_cap_lt - alt_cap_lt(1)
+
+def PBLri(T, tk, alt_cap_lt, hi, P, Hu, Ws, Wd): #looks at ri value for all the heights between 0m and 5000m
+    ri = (((vpt-vpt0)/vpt0)*(alt_cap_lt-alt_cap_lt0)*g)/((u)^2+(v)^2)
+    return ri
 
 def pblpt(hi, pot):
     # This function calculates PBL height based on potential temperature method
