@@ -4,11 +4,12 @@ import pandas as pd  # Convenient data formatting, and who doesn't want pandas
 from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import os  # File reading and input
 from io import StringIO  # Used to run strings through input/output functions
+from scipy import interpolate  # Used for PBL calculations
 import pywt  # Library PyWavelets, for wavelet transforms
 
 ########## Function definitions, to be used later ##########
 
-def pblri(vpt, u, v, hi):
+def pblri(vpt, vt, pt, u, v, hi):
     # This function calculates richardson number. It then
     # searches for where Ri(z) is near 0.25 and interpolates to get the height
     # z where Ri(z) = 0.25.
@@ -18,10 +19,33 @@ def pblri(vpt, u, v, hi):
     # OUTPUTS: PBL height based on RI
 
     g = 9.81  # m/s/s
-    ri = (((vpt - vpt[0]) / vpt[0]) * hi * g) / (u ** 2 + v ** 2)
+    ri = (pt - pt[0]) * hi * g / ( pt * (u ** 2 + v ** 2) )
+    # This equation is right according to
+    #https://www.researchgate.net/figure/Profile-of-potential-temperature-MR-and-Richardson-number-calculated-from-radiosonde_fig4_283187927
+    #https://resy5.iket.kit.edu/RODOS/Documents/Public/CD1/Wg2_CD1_General/WG2_RP97_19.pdf
+
+    #vt = vt[0:len(vt)-1]
+    #ri = (np.diff(vpt) * np.diff(hi) * g / abs(vt)) / (np.diff(u) ** 2 + np.diff(v) ** 2)
+    #print(ri)
     # Richardson number. If surface wind speeds are zero, the first data point
     # will be an inf or NAN.
-    return np.interp(0.25, ri, hi)
+
+    # Interpolate between data points
+    riCutOff = 0.25
+    f = interpolate.UnivariateSpline(hi, ri - riCutOff, s=0)
+    plt.plot(ri, hi)
+    plt.plot(f(hi)+riCutOff, hi)
+    plt.plot([0.25] * 2, plt.ylim())
+    plt.xlabel("RI")
+    plt.ylabel("Height above ground [m]")
+    plt.axis([-10, 20, 0, 5000])
+    plt.show()
+
+    # Return heights where interpolation crosses riCutOff = 0.25
+    # Need a way to pick which one is the right one... there are many
+    if len(f.roots()) == 0:
+        return [0]
+    return f.roots()
 
 def pblpt(hi, pot):
     # This function calculates PBL height based on potential temperature method
@@ -186,6 +210,8 @@ for file in os.listdir(dataSource):
             for row in range(data.shape[0]):
                 if not str(data['Rs'].loc[row]).replace('.', '', 1).isdigit():  # Check for nonnumeric or negative rise rate
                     badRows.append(row)
+                elif row > 0 and np.diff(data['Alt'])[row-1] <= 0:
+                    badRows.append(row)
                 else:
                     for col in range(data.shape[1]):
                         if data.iloc[row, col] == 999999.0:  # This value appears a lot and is obviously wrong
@@ -215,12 +241,15 @@ for file in os.listdir(dataSource):
             # virtual potential temperature
             vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
 
+            # absolute virtual temperature
+            vt = (data['T'] + 273.15) * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
+
             # u and v (east & north?) components of wind speed
             u = -data['Ws'] * np.sin(data['Wd'] * np.pi / 180)
             v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
             # Get three different PBL height estimations
-            pblHeightRI = pblri(vpt, u, v, hi)
+            pblHeightRI = pblri(vpt, vt, pot, u, v, hi)
             #pblHeightPT = pblpt(hi, pot) needs some serious work
             #pblHeightSH = pblsh(hi, rvv) needs some serious work
             print("Calculated PBL height of "+str(pblHeightRI))#+", "+str(pblHeightPT)+", and "+str(pblHeightSH)+" meters")
