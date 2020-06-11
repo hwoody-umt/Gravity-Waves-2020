@@ -6,6 +6,91 @@ import os  # File reading and input
 from io import StringIO  # Used to run strings through input/output functions
 import pywt  # Library PyWavelets, for wavelet transforms
 
+########## Function definitions, to be used later ##########
+
+def pblri(vpt, u, v, hi):
+    # This function calculates richardson number. It then
+    # searches for where Ri(z) is near 0.25 and interpolates to get the height
+    # z where Ri(z) = 0.25.
+    #
+    # INPUTS: write what these are eventually
+    #
+    # OUTPUTS: PBL height based on RI
+
+    g = 9.81  # m/s/s
+    ri = (((vpt - vpt[0]) / vpt[0]) * hi * g) / (u ** 2 + v ** 2)
+    # Richardson number. If surface wind speeds are zero, the first data point
+    # will be an inf or NAN.
+    return np.interp(0.25, ri, hi)
+
+def pblpt(hi, pot):
+    # This function calculates PBL height based on potential temperature method
+    maxhidx = max(hi)
+    pth = pot[10:maxhidx]
+    upH = hi[10:maxhidx]
+    topH = 3500
+    height3k = [i for i in upH if upH[i] <= topH]
+    pt3k = [i for i in pth if upH[i] <= topH]
+    dp3k = np.gradient(pt3k, height3k)
+    maxdpidx = max(dp3k)
+    return height3k * maxdpidx
+
+def pblsh(hi, rvv):
+    # This function calculates PBL height using another method - WHAT?
+    maxhidx = max(hi)
+    q = rvv/(1+rvv)
+    qh = q[10:maxhidx]
+    upH = hi[10:maxhidx]
+    topH = 3500
+    height3k = upH(upH<=topH)
+    q3k = qh(upH<=topH)
+    dq3k = np.gradient(q3k,height3k)
+    dq = np.gradient(q,hi)
+    mindpidx = min(dq3k)
+    return height3k * mindpidx
+
+def layerStability(hi, pot):
+    ds = 1
+    #du = 0.5 doesn't seem to be used... ?
+    try:
+        diff = [pot[i] for i in range(len(pot)) if hi[i] >= 150]
+        diff = diff[0]-pot[0]
+    except:
+        return "Unable to detect layer stability, possibly due to corrupt data"
+
+    if diff < -ds:
+        return "Detected convective boundary layer"
+    elif diff > ds:
+        return "Detected stable boundary layer"
+    else:
+        return "Detected neutral residual layer"
+
+def drawPlots(alt, t, td, pblHeightRI):#, pblHeightPT, pblHeightSH):
+    print("Displaying data plots")
+
+    # Plot radiosonde path
+    plt.plot(data['Long.'], data['Lat.'])
+    plt.ylabel("Latitude [degrees]")
+    plt.xlabel("Longitude [degrees]")
+    plt.title("Radiosonde Flight Path")
+    plt.show()
+
+    # Plot pbl estimates
+    pblHeightRI += alt[0]  # Convert height to altitude
+    #pblHeightPT += alt[0]
+    #pblHeightSH += alt[0]
+    plt.plot(t, alt, label="Temperature")
+    plt.plot(td, alt, label="Dewpoint")
+    #plt.plot(plt.get_xlim(),[pblHeightPT] * 2, label="PT Method")
+    plt.plot(plt.xlim(), [pblHeightRI] * 2, label="RI Method")
+    #plt.plot(t,[pblHeightSH] * 2, label="SH Method")
+    plt.title('PBL Calculations')
+    plt.xlabel("Temperature [deg. C]")
+    plt.ylabel("Altitude [m]")
+    plt.legend()
+    plt.show()
+
+
 ########## USER INPUT SECTION ##########
 def getUserInputFile(prompt):
     print(prompt)
@@ -110,33 +195,22 @@ for file in os.listdir(dataSource):
                 print("Dropping "+str(len(badRows))+" rows containing unusable data")
             data = data.drop(data.index[badRows])
 
-            #Make cursory inspection plots, dependent on user input showPlots
-            if showPlots:
-                print("Displaying input data")
-                plt.plot(data['Long.'], data['Lat.'])
-                plt.ylabel("Latitude")
-                plt.xlabel("Longitude")
-                plt.show()
-
             ########## PERFORMING ANALYSIS ##########
 
             #Calculate variables needed for further analysis
+            print("Calculating PBL height")
 
-            tk = data['T'] + 273.15  # Temperature in Kelvin
             hi = data['Alt'] - data['Alt'][1]  # height above ground in meters
             epsilon = 0.622  # epsilon, unitless constant
 
-            # saturation vapor pressure
-            es = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T'])))  # hPa
-
             # vapor pressure
-            e = es * data['Hu']  # hPa
+            e = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T']))) * data['Hu']  # hPa
 
             # water vapor mixing ratio
             rvv = (epsilon * e) / (data['P'] - e)  # unitless
 
             # potential temperature
-            pot = (1000.0 ** 0.286) * tk / (data['P'] ^ 0.286)  # kelvin
+            pot = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
 
             # virtual potential temperature
             vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
@@ -145,28 +219,16 @@ for file in os.listdir(dataSource):
             u = -data['Ws'] * np.sin(data['Wd'] * np.pi / 180)
             v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
-            g = 9.81  # m/s/s
+            # Get three different PBL height estimations
+            pblHeightRI = pblri(vpt, u, v, hi)
+            #pblHeightPT = pblpt(hi, pot) needs some serious work
+            #pblHeightSH = pblsh(hi, rvv) needs some serious work
+            print("Calculated PBL height of "+str(pblHeightRI))#+", "+str(pblHeightPT)+", and "+str(pblHeightSH)+" meters")
+            print(layerStability(hi, pot))
 
-
-
-
-            def PBLri(vpt,Alt,g,u,v):
-                # This function calculates richardson number. We then
-                # search for where Ri(z) is near 0.25 and interpolates to get the height
-                # z where Ri(z) = 0.25.
-                #
-                # INPUTS: temperature in C, temperature in K, altitude in meters, height in
-                # meters, pressure in hPa, humidity as decimal value, wind speed in m/s,
-                # and wind direction in degrees.
-                #
-                # OUTPUTS: richardson number
-                ri = (((vpt - vpt[0]) / vpt[0]) * (Alt - Alt[0]) * g) / (u ** 2 + v ** 2)
-
-                # Richardson number. If surface wind speeds are zero, the first data point
-                # will be an inf or NAN.
-                return ri
-
-
+            # Make preliminary analysis plots, dependent on user input showPlots
+            if showPlots:
+                drawPlots(data['Alt'],data['T'],data['Dewp.'],pblHeightRI)#,pblHeightPT,pblHeightSH)
 
             # Next, figure out what the preprocessing is actually accomplishing and why.
             # It seems to be creating a new data set by picking several times and then
