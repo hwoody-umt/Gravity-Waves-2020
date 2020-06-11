@@ -20,9 +20,14 @@ def alt_cap(Alt):
 alt_cap_lt0 = alt_cap_lt(1) #defines the ground level altitude
 hi = alt_cap_lt - alt_cap_lt(1)
 
+ri_height = []
+
 def PBLri(T, tk, alt_cap_lt, hi, P, Hu, Ws, Wd): #looks at ri value for all the heights between 0m and 5000m
     ri = (((vpt-vpt0)/vpt0)*(alt_cap_lt-alt_cap_lt0)*g)/((u)^2+(v)^2)
-    return ri
+    for value in ri:
+        if ri <= 0.25:
+            ri_height.append(alt_cap_lt(value))
+    return ri_height
 
 def pblpt(hi, pot):
     # This function calculates PBL height based on potential temperature method
