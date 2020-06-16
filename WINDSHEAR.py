@@ -183,7 +183,7 @@ res =[]
 
 def ri_level(T, tk, hi, P, Hu, ws, Wd):
     g = 9.81
-    ri = (((vpt-vpt0)/vpt0)*(hi-hi0)*g)/((u)**2+(v)**2)
+    ri = (pot - pot[0]) * hi * g / ( pot * (u ** 2 + v ** 2) )
     for value in ri:
         if value <= 0.25:
             significant_ri.append(value)
