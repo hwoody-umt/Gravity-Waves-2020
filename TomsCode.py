@@ -15,7 +15,7 @@ import csv
 
 ########## PBL AND STABILITY CALCULATIONS ##########
 
-def pblri(vpt, vt, pt, u, v, hi):
+def pblri(pt, u, v, hi):
     # This function calculates richardson number. It then
     # searches for where Ri(z) is near 0.25 and interpolates to get the height
     # z where Ri(z) = 0.25.
@@ -25,23 +25,23 @@ def pblri(vpt, vt, pt, u, v, hi):
     # OUTPUTS: PBL height based on RI
 
     g = 9.81  # m/s/s
-    ri = (pt - pt[0]) * hi * g / ( pt * (u ** 2 + v ** 2) )
+    ri = (pt - pt[0]) * hi * g / (pt * (u ** 2 + v ** 2))
     # This equation is right according to
-    #https://www.researchgate.net/figure/Profile-of-potential-temperature-MR-and-Richardson-number-calculated-from-radiosonde_fig4_283187927
-    #https://resy5.iket.kit.edu/RODOS/Documents/Public/CD1/Wg2_CD1_General/WG2_RP97_19.pdf
+    # https://www.researchgate.net/figure/Profile-of-potential-temperature-MR-and-Richardson-number-calculated-from-radiosonde_fig4_283187927
+    # https://resy5.iket.kit.edu/RODOS/Documents/Public/CD1/Wg2_CD1_General/WG2_RP97_19.pdf
 
-    #vt = vt[0:len(vt)-1]
-    #ri = (np.diff(vpt) * np.diff(hi) * g / abs(vt)) / (np.diff(u) ** 2 + np.diff(v) ** 2)
-    #print(ri)
+    # vt = vt[0:len(vt)-1]
+    # ri = (np.diff(vpt) * np.diff(hi) * g / abs(vt)) / (np.diff(u) ** 2 + np.diff(v) ** 2)
+    # print(ri)
     # Richardson number. If surface wind speeds are zero, the first data point
     # will be an inf or NAN.
 
     # Interpolate between data points
-    riCutOff = 0.25
+    riCutOff = 0.33
     f = interpolate.UnivariateSpline(hi, ri - riCutOff, s=0)
     #plt.plot(ri, hi)
-    #plt.plot(f(hi)+riCutOff, hi)
-    #plt.plot([0.25] * 2, plt.ylim())
+    #plt.plot(f(hi) + riCutOff, ri)
+    #plt.plot([0.33] * 2, plt.ylim())
     #plt.xlabel("RI")
     #plt.ylabel("Height above ground [m]")
     #plt.axis([-10, 20, 0, 5000])
@@ -53,38 +53,57 @@ def pblri(vpt, vt, pt, u, v, hi):
         return [0]
     return f.roots()
 
-def pblpt(hi, pot):
-    # This function calculates PBL height based on potential temperature method
-    maxhidx = max(hi)
+def pblpt(Alt, pot, hi):
+    maxhidx = np.argmax(Alt)
     pth = pot[10:maxhidx]
     upH = hi[10:maxhidx]
-    topH = 3500
-    height3k = [i for i in upH if upH[i] <= topH]
-    pt3k = [i for i in pth if upH[i] <= topH]
-    dp3k = np.gradient(pt3k, height3k)
-    maxdpidx = max(dp3k)
-    return height3k * maxdpidx
+    topH = 3800
+    height3k = []
+    for i, H in enumerate(upH):
+        if H >= topH:
+            break
+        height3k.append(H)
+    pt3k = pth[0:i]
+    dp = np.gradient(pt3k, height3k)
+    maxpidx = np.argmax(dp)
+    pbl_potential_temperature = Alt[maxpidx]
+    return str(pbl_potential_temperature)
 
 def pblsh(hi, rvv):
-    # This function calculates PBL height using another method - WHAT?
-    maxhidx = max(hi)
-    q = rvv/(1+rvv)
+    maxhidx = np.argmax(hi)
+    q = rvv / (1 + rvv)
     qh = q[10:maxhidx]
     upH = hi[10:maxhidx]
-    topH = 3500
-    height3k = upH(upH<=topH)
-    q3k = qh(upH<=topH)
-    dq3k = np.gradient(q3k,height3k)
-    dq = np.gradient(q,hi)
-    mindpidx = min(dq3k)
-    return height3k * mindpidx
+    topH = 3800
+    height3k = []
+    for i, H in enumerate(upH):
+        if H >= topH:
+            break
+        height3k.append(H)
+    qh3k = qh[0:i]
+    dp = np.gradient(qh3k, height3k)
+    minpix = np.argmin(dp)
+    pbl_sh = hi[minpix]
+    return pbl_sh
+
+def pblvpt(vpt, hi):
+    vptCutOff = vpt[1]
+    f = interpolate.UnivariateSpline(hi, vpt - vptCutOff, s=0)
+    #plt.plot(vpt, hi)
+    #plt.plot(f(hi) + vptCutOff, hi)
+    #plt.plot([vpt[1]] * 2, plt.ylim())
+    #plt.axis([300, 400, 0, 3000])
+    #plt.xlabel("VPT")
+    #plt.ylabel("Height above ground [m]")
+    #plt.show()
+    return 0
 
 def layerStability(hi, pot):
     ds = 1
-    #du = 0.5 doesn't seem to be used... ?
+    # du = 0.5 doesn't seem to be used... ?
     try:
         diff = [pot[i] for i in range(len(pot)) if hi[i] >= 150]
-        diff = diff[0]-pot[0]
+        diff = diff[0] - pot[0]
     except:
         return "Unable to detect layer stability, possibly due to corrupt data"
 
@@ -95,7 +114,8 @@ def layerStability(hi, pot):
     else:
         return "Detected neutral residual layer"
 
-def drawPlots(alt, t, td, pblHeight):
+def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeightSH):
+    print("Displaying data plots")
 
     # Plot radiosonde path
     plt.plot(data['Long.'], data['Lat.'])
@@ -105,13 +125,16 @@ def drawPlots(alt, t, td, pblHeight):
     plt.show()
 
     # Plot pbl estimates
-    pblHeight += alt[0]  # Convert height to altitude
-    #pblHeightPT += alt[0]
-    #pblHeightSH += alt[0]
+    pblHeightRI += alt[0]  # Convert height to altitude
+    # pblHeightSH += alt[0]
     plt.plot(t, alt, label="Temperature")
     plt.plot(td, alt, label="Dewpoint")
-    plt.plot(plt.xlim(), [pblHeight] * 2, label="PBL Estimate")
-    plt.title('PBL Calculation')
+    # plt.plot(plt.get_xlim(),[pblHeightPT] * 2, label="PT Method")
+    plt.plot(plt.xlim(), [pblHeightRI] * 2, label="RI Method")
+    plt.plot(plt.xlim(), [pblHeightVPT] * 2, label="VPT Method")
+    plt.axis([-80, 20, 1000, 3500])
+    # plt.plot(t,[pblHeightSH] * 2, label="SH Method")
+    plt.title('PBL Calculations')
     plt.xlabel("Temperature [deg. C]")
     plt.ylabel("Altitude [m]")
     plt.legend()
@@ -140,11 +163,10 @@ def calculatePBL(data):
     v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
     # Get three different PBL height estimations
-    pblHeightRI = pblri(vpt, vt, pot, u, v, hi)
-    #pblHeightPT = pblpt(hi, pot) needs some serious work
-    #pblHeightSH = pblsh(hi, rvv) needs some serious work
-    print("Calculated PBL height of "+str(pblHeightRI))#+", "+str(pblHeightPT)+", and "+str(pblHeightSH)+" meters")
-    print(layerStability(hi, pot))
+    pblHeightRI = pblri(pot, u, v, hi)
+    pblHeightVPT = pblvpt(vpt, hi)
+    pblHeightPT = pblpt(data['Alt'],pot,hi)
+    pblHeightSH = pblsh(hi, rvv)
 
     # Make preliminary analysis plots, dependent on user input showPlots
     #if showPlots:
@@ -152,7 +174,9 @@ def calculatePBL(data):
 
     # Calculate which PBL height to use
     # pblHeight = max(pblHeightRI), pblHeightPT, pblHeightSH)
-    pblHeight = pblHeightRI[0]  # Will be changed tomorrow
+    pblHeight = np.max([pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH])
+    print("Calculated PBL height of " + str(pblHeight))
+    print(layerStability(hi, pot))
     return pblHeight  # Return best guess for pbl height
 
 ########## USER INPUT SECTION ##########

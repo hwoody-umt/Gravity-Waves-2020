@@ -69,8 +69,6 @@ def pblpt(Alt, pot):
     pbl_potential_temperature = Alt[maxpidx]
     return str(pbl_potential_temperature)
 
-
-
 def pblsh(hi, rvv):
     maxhidx = np.argmax(hi)
     q = rvv/(1+rvv)
@@ -104,10 +102,6 @@ def pblvpt(pot, rvv, vpt, hi):
     plt.xlabel("VPT")
     plt.ylabel("Height above ground [m]")
     plt.show()
-
-
-
-
 
 def layerStability(hi, pot):
     ds = 1
