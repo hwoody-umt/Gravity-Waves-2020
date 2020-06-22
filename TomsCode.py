@@ -86,17 +86,36 @@ def pblsh(hi, rvv):
     pbl_sh = hi[minpix]
     return pbl_sh
 
-def pblvpt(vpt, hi):
+def pblvpt(pot, rvv, vpt, hi):
+    pot = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)
+    epsilon = 0.622  # epsilon, unitless constant
+    virtcon = 0.61
+    rvv = (epsilon * e) / (data['P'] - e)  # unitless
+    vpt = pot * (1 + (virtcon * rvv))
+    
     vptCutOff = vpt[1]
-    f = interpolate.UnivariateSpline(hi, vpt - vptCutOff, s=0)
-    #plt.plot(vpt, hi)
-    #plt.plot(f(hi) + vptCutOff, hi)
-    #plt.plot([vpt[1]] * 2, plt.ylim())
-    #plt.axis([300, 400, 0, 3000])
-    #plt.xlabel("VPT")
-    #plt.ylabel("Height above ground [m]")
-    #plt.show()
-    return 0
+    g = interpolate.UnivariateSpline(hi, vpt - vptCutOff, s=0)
+    plt.plot(vpt, hi)
+    plt.plot(g(hi)+vptCutOff, hi)
+    plt.plot([vpt[1]] * 2, plt.ylim())
+    plt.axis([300, 400, 0, 3000])
+    plt.xlabel("VPT")
+    plt.ylabel("Height above ground [m]")
+    plt.show()
+    
+    rootuno = []
+    rootdos = []
+    
+    if len(g.roots()) == 0:
+        return [0]
+    for H in g.roots():
+        if H >= 1000:
+            rootuno.append(H)
+    for J in rootuno:
+        if J <= 3000:
+            rootdos.append(J)
+    return max(rootdos)
+
 
 def layerStability(hi, pot):
     ds = 1
@@ -113,6 +132,11 @@ def layerStability(hi, pot):
         return "Detected stable boundary layer"
     else:
         return "Detected neutral residual layer"
+    
+def largestpbl (pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH):
+    listofheights = [str(pblHeightRI), str(pblHeightPT), str(pblHeightSH), str(pblHeightVPT)]
+    Output = sorted(listofheights, key = lambda x:float(x))
+    return Output[-1]
 
 def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeightSH):
     print("Displaying data plots")
@@ -163,10 +187,13 @@ def calculatePBL(data):
     v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
     # Get three different PBL height estimations
-    pblHeightRI = pblri(pot, u, v, hi)
-    pblHeightVPT = pblvpt(vpt, hi)
-    pblHeightPT = pblpt(data['Alt'],pot,hi)
+    pblHeightRI = pblri(vpt, vt, pot, u, v, hi)
+    pblHeightVPT = pblvpt(pot, rvv, vpt, hi)
+    pblHeightPT = pblpt(hi, pot)
     pblHeightSH = pblsh(hi, rvv)
+    pblLargestHeight = largestpbl(pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH)
+    print(layerStability(hi, pot))
+    print("HIGHEST PBL HEIGHT CALCULATED " + str(pblLargestHeight))
 
     # Make preliminary analysis plots, dependent on user input showPlots
     #if showPlots:
