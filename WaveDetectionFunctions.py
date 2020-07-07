@@ -14,98 +14,107 @@ import datetime  # Turning time into dates
 
 ########## PBL AND STABILITY CALCULATIONS ##########
 
-def pblri(pt, u, v, hi):
-    # This function calculates richardson number. It then
-    # searches for where Ri(z) is near 0.25 and interpolates to get the height
-    # z where Ri(z) = 0.25.
-    #
-    # INPUTS: write what these are eventually
-    #
-    # OUTPUTS: PBL height based on RI
+def pblRI(vpt, u, v, hi):
+    # The RI method looks for a Richardson number between 0 and 0.25 above a height of 800 and below a height of 3000
+    # The function will then return the highest height of a "significant RI"
+    # NOTE: these boundaries will need to be changed if you are taking data from a night time flight,
+    # where the PBL can be lower than 800m
+    # or a flight near the equator where the PBL can exceed a height of 3000m
+
+    # Support for this method and the equation used can be found at the following link:
+    # https://resy5.iket.kit.edu/RODOS/Documents/Public/CD1/Wg2_CD1_General/WG2_RP97_19.pdf
+    # https://watermark.silverchair.com/1520-0469(1979)036_0012_teorwa_2_0_co_2.pdf?token=AQECAHi208BE49Ooan9kkhW_Ercy7Dm3ZL_9Cf3qfKAc485ysgAAAsMwggK_BgkqhkiG9w0BBwagggKwMIICrAIBADCCAqUGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMtQBGOhb8zchwxViIAgEQgIICduC_f9w94ccDO9Nz1u73Ti7uOmXyjo_dLzL6LsXhu0-0uMAxTRsrPuPu_aCgyt4vyLVccC1OeRc9KR5npTEGstzVFFZs-vFNNs8Bl78f1K5jOhlAT9DYH3oSp3vdEM763kaZDV_1mc-8QzJORohbeGB1YOu4TbqYd70ZoJCS59yKO7emrSfcVVdQIWNOQ6PoT4ONeDowOCXCIgv4WBO-ul9fKAuA217EvXIh3-5o_SGj-SuMO30ktr8htOstvD_dC36eB3efxJ9l2MyDwvurUAO4CfJBgpaCKAg4af8LeljpmlXbFgkB7_jQyVXYvdfZNxvjAmp72Nbn6x_qjRc3TMhrhzw4R0ZtwjF9IjfDz-zolAwDPZ_PALKP-HE-M-Zi7q9hRd6XxDsjVOINTpZ07apgpT0ssX58uU3aPAiWDZnEInwz2-r_b_6KJHABRFWj4GYmW34v35nQz_xCo20S3MRQ-Lh7CiiwIAvkchNIfpScUI11Kz7Hd8gLsVqQ7r8fp4iWbgc4NEkS2gRkj8XEIqdvvFyCLLPo6bs_20iVtyEuGuwWQM3fYbpiS38iqth9LFcx7suDYUbMd1GbrYR3gdbvr9KKLohN6-rCJV-8rxIDOqraPxewIJyOckPHEaQ5Ek1Q1FEahweLE3HDgz93DnDQHoHYrmDU0gmsvDRqtxVRnqVf95d3V5DQNom8MFPEZiRdv7Vb8-2BQq_GMYEXZrv0FeKVr40HLSRy5Kc4qXZBR97XjN04AEyJ-umhyrb5DuzQdksk2T5WTXIIlx3DmZXLYY5Ond0cXDhOjGh7A6sPiJ2jVPTEzwSdwXUtpnMdxdpsFX6GhQ
 
     g = 9.81  # m/s/s
-    ri = (pt - pt[0]) * hi * g / (pt * (u ** 2 + v ** 2))
-    # This equation is right according to
-    # https://www.researchgate.net/figure/Profile-of-potential-temperature-MR-and-Richardson-number-calculated-from-radiosonde_fig4_283187927
-    # https://resy5.iket.kit.edu/RODOS/Documents/Public/CD1/Wg2_CD1_General/WG2_RP97_19.pdf
+    ri = (((vpt - vpt[0]) * hi * g) / (vpt[0] * (u ** 2 + v ** 2)))
+    #  Check for positive RI <= 0.25 and height between 800 and 3000 meters
+    ri = ri[0 <= ri <= 0.25 and 800 <= hi <= 3000]
+    return np.max( ri )
 
-    # vt = vt[0:len(vt)-1]
-    # ri = (np.diff(vpt) * np.diff(hi) * g / abs(vt)) / (np.diff(u) ** 2 + np.diff(v) ** 2)
-    # print(ri)
-    # Richardson number. If surface wind speeds are zero, the first data point
-    # will be an inf or NAN.
 
-    # Interpolate between data points
-    riCutOff = 0.33
-    f = interpolate.UnivariateSpline(hi, ri - riCutOff, s=0)
-    #plt.plot(ri, hi)
-    #plt.plot(f(hi) + riCutOff, ri)
-    #plt.plot([0.33] * 2, plt.ylim())
-    #plt.xlabel("RI")
-    #plt.ylabel("Height above ground [m]")
-    #plt.axis([-10, 20, 0, 5000])
-    #plt.show()
+def pblPT(hi, pot):
+    # The potential temperature method looks at a vertical gradient of potential temperature, the maximum of this gradient
+    # ie: Where the change of potential temperature is greatest
+    # However, due to the nature of potential temperature changes you will need to interpret this data from the graph
+    # produced by this function. In this case you are looking for a maxium on the POSITIVE side of the X=axis around the
+    # height that makes sense for your predicted PBL height
+    # NOTE: arrays at the top of the function start at index 10 to avoid noise from the lower indexes.
 
-    # Return heights where interpolation crosses riCutOff = 0.25
-    # Need a way to pick which one is the right one... there are many
-    if len(f.roots()) == 0:
-        return [0]
-    return f.roots()[0]
+    # Support for this method can be found at the following link:
+    # https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2009JD013680
 
-def pblpt(Alt, pot, hi):
-    maxhidx = np.argmax(Alt)
-    pth = pot[10:maxhidx]
-    upH = hi[10:maxhidx]
-    topH = 3800
+    maxhidx = np.argmax(hi)  # finds the index of the highest height from the flight
+    pth = pot[10:maxhidx]  # creates an array of potential temps between index 10 and the above found index
+    upH = hi[10:maxhidx]  # creates an array of heights between index 10 and the above found index
+    topH = 3500
     height3k = []
-    for i, H in enumerate(upH):
-        if H >= topH:
+    for i, H in enumerate(upH):  # looks at the indices of upH
+        if H >= topH:  # looks for heights below topH (too high for reasonable PBL)
             break
-        height3k.append(H)
-    pt3k = pth[0:i]
-    dp = np.gradient(pt3k, height3k)
-    maxpidx = np.argmax(dp)
-    pbl_potential_temperature = Alt[maxpidx]
-    return pbl_potential_temperature
+        height3k.append(H)  # creates a list of heights between index 10 and the height 3500m
+    pt3k = pth[0:i]  # creates a list of potential temperature calculations for the heights between 10 and 3500 using the height indices
+    dp = np.gradient(pt3k, height3k)  # creates a gradient of potential temperature and height
 
-def pblsh(hi, rvv):
-    maxhidx = np.argmax(hi)
-    q = rvv / (1 + rvv)
-    qh = q[10:maxhidx]
-    upH = hi[10:maxhidx]
-    topH = 3800
+    plt.plot(dp, height3k)  # creates the plot you will need to read to determine the PBL Height
+    plt.ylim(800, 2000)  # Change this if there is reason to believe PBL may be higher than 2000, or lower than 800
+    plt.xlabel("Gradient of PT")
+    plt.ylabel("Height above ground in meters")
+    plt.show()
+
+    return getUserInputNum("Please enter the PBL height according to this plot:")
+
+
+def pblSH(hi, rvv):
+    # The specific humidity method looks at a vertical gradient of specific humidity, the minimum of this gradient
+    # ie: where the change in gradient is the steepest in negative direction
+    # However, due to the nature of specific humidity changes you will need to interpret this data from the graph
+    # produced by this function. In this case you are looking for a maxium on the NEGATIVE side of the X=axis around the
+    # height that makes sense for your predicted PBL height
+    # NOTE: arrays at the top of the function start at index 10 to avoid noise from the lower indexes.
+
+    # Support for this method can be found at the following link:
+    # https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2009JD013680
+
+    maxhidx = np.argmax(hi)  # finds the index of the highest height from the flight
+    q = rvv / (1 + rvv)  # equation for specific humidity
+    qh = q[10:maxhidx]  # creates an array of soecific humidities between index 10 and the above found index
+    upH = hi[10:maxhidx]  # creates an array of heights between index 10 and the above found index
+    topH = 3500
     height3k = []
-    for i, H in enumerate(upH):
-        if H >= topH:
+    for i, H in enumerate(upH):  # looks at the indices of upH
+        if H >= topH:  # looks for heights below topH (too high for reasonable PBL)
             break
-        height3k.append(H)
-    qh3k = qh[0:i]
-    dp = np.gradient(qh3k, height3k)
-    minpix = np.argmin(dp)
-    pbl_sh = hi[minpix]
-    return pbl_sh
+        height3k.append(H)  # creates a list of heights between index 10 and the height 3500m
+    qh3k = qh[0:i]  # creates a list of potential temperature calculations for the heights between 10 and 3500 using the height indices
+    dp = np.gradient(qh3k, height3k)  # creates a gradient of potential temperature and height
 
-def pblvpt(pot, rvv, vpt, hi):
-    pot = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)
-    epsilon = 0.622  # epsilon, unitless constant
+    plt.plot(dp, height3k)  # creates the plot you will need to read to determine the PBL Height
+    plt.ylim(800, 2000)  # Change this if there is reason to believe the PBL may be higher than 2000 or lower than 800
+    plt.xlabel("Gradient of Specific Humidity")
+    plt.ylabel("Height above ground in meters")
+    plt.show()
+
+    return getUserInputNum("Please enter the PBL height according to this plot:")
+
+
+def pblVPT(pot, rvv, hi):
+    # The Virtual Potential Temperature (VPT) method looks for the height at which VPT is equal to the VPT at surface level
+    # NOTE: The VPT may equal VPT[0] in several places, so the function is coded to return the highest height where
+    # these are equal
+
+    # Supoort for this method can be found at the following link:
+    # https://www.mdpi.com/2073-4433/6/9/1346/pdf
+
     virtcon = 0.61
-    rvv = (epsilon * e) / (data['P'] - e)  # unitless
-    vpt = pot * (1 + (virtcon * rvv))
-    
+    vpt = pot * (1 + (virtcon * rvv))  # virtual potential temperature equation
+
     vptCutOff = vpt[1]
     g = interpolate.UnivariateSpline(hi, vpt - vptCutOff, s=0)
-    plt.plot(vpt, hi)
-    plt.plot(g(hi)+vptCutOff, hi)
-    plt.plot([vpt[1]] * 2, plt.ylim())
-    plt.axis([300, 400, 0, 3000])
-    plt.xlabel("VPT")
-    plt.ylabel("Height above ground [m]")
-    plt.show()
-    
+
     rootuno = []
     rootdos = []
-    
-    if len(g.roots()) == 0:
+
+    if len(g.roots()) == 0:  # the following section finds locations where VPT crosses the value of VPT[1]
         return [0]
     for H in g.roots():
         if H >= 1000:
@@ -113,12 +122,16 @@ def pblvpt(pot, rvv, vpt, hi):
     for J in rootuno:
         if J <= 3000:
             rootdos.append(J)
-    return max(rootdos)
+    return max(rootdos)  # Returns the highest ALT where VPT = VPT[1]
 
 
 def layerStability(hi, pot):
+    # This function looks through potential temperature data to determine layer stability into 3 catergories
+    # NOTE: It is best to choose the higest PBL calculation unless the methods produce PBL Heights more than 300m
+    # apart. Also, when a stable boundary layer is detected, reject a PBL that is above 2000m, as these are often
+    # night-time layers and a PBL near 2000m does not make sense
+
     ds = 1
-    # du = 0.5 doesn't seem to be used... ?
     try:
         diff = [pot[i] for i in range(len(pot)) if hi[i] >= 150]
         diff = diff[0] - pot[0]
@@ -131,11 +144,7 @@ def layerStability(hi, pot):
         return "Detected stable boundary layer"
     else:
         return "Detected neutral residual layer"
-    
-def largestpbl (pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH):
-    listofheights = [str(pblHeightRI), str(pblHeightPT), str(pblHeightSH), str(pblHeightVPT)]
-    Output = sorted(listofheights, key = lambda x:float(x))
-    return Output[-1]
+
 
 def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeightSH):
     print("Displaying data plots")
@@ -163,48 +172,6 @@ def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeigh
     plt.legend()
     plt.show()
 
-def calculatePBL(data):
-
-    #Calculate necessary variables
-
-    # Height above ground
-    hi = data['Alt'] - data['Alt'][0]  # meters
-    # Epsilon, from?
-    epsilon = 0.622  # unitless constant
-    # Vapor pressure
-    e = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T']))) * data['Hu']  # hPa
-    # Water vapor mixing ratio
-    rvv = (epsilon * e) / (data['P'] - e)  # unitless
-    # Potential temperature
-    pot = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
-    # virtual potential temperature
-    vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
-    # absolute virtual temperature
-    vt = (data['T'] + 273.15) * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
-    # u and v (east & north?) components of wind speed
-    u = -data['Ws'] * np.sin(data['Wd'] * np.pi / 180)
-    v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
-
-    # Get three different PBL height estimations
-    pblHeightRI = pblri(vpt, vt, pot, u, v, hi)
-    pblHeightVPT = pblvpt(pot, rvv, vpt, hi)
-    pblHeightPT = pblpt(hi, pot)
-    pblHeightSH = pblsh(hi, rvv)
-    pblLargestHeight = largestpbl(pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH)
-    print(layerStability(hi, pot))
-    print("HIGHEST PBL HEIGHT CALCULATED " + str(pblLargestHeight))
-
-    # Make preliminary analysis plots, dependent on user input showPlots
-    #if showPlots:
-    #    drawPlots(data['Alt'], data['T'], data['Dewp.'], pblHeightRI)#,pblHeightPT,pblHeightSH)
-
-    # Calculate which PBL height to use
-    # pblHeight = max(pblHeightRI), pblHeightPT, pblHeightSH)
-    pblHeight = np.max(np.array([pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH]))
-    print("Calculated PBL height of " + str(pblHeight))
-    print(layerStability(hi, pot))
-    return pblHeight  # Return best guess for pbl height
-
 ########## USER INPUT SECTION ##########
 def getUserInputFile(prompt):
     print(prompt)
@@ -227,6 +194,16 @@ def getUserInputTF(prompt):
         return True
     else:
         return False
+
+def getUserInputNum(prompt):
+    print(prompt)
+    userInput = ""
+    while not userInput:
+        userInput = input()
+        if not userInput.isdigit():
+            print("Please enter a valid integer:")
+            userInput = ""
+    return int(userInput)
 
 def getAllUserInput():
     dataSource = getUserInputFile("Enter path to data input directory: ")
@@ -272,11 +249,6 @@ def cleanData(file, path):
     f = open(os.path.join(path, file), 'r')
     print("\nOpening file "+file+":")
     for line in f:  # Iterate through file, line by line
-        if line.rstrip() == "Flight Information:":
-            dateTimeInfo = f.readline().split()
-            dateTimeInfo = ' '.join(dateTimeInfo[2:6] + [dateTimeInfo[8]])
-            launchDateTime = datetime.datetime.strptime(dateTimeInfo, '%A, %d %B %Y %H:%M:%S')
-
         if line.rstrip() == "Profile Data:":
             isProfile = True  # We found the start of the real data in GRAWMET profile format
             contents = f.read()  # Read in rest of file, discarding header
@@ -326,7 +298,31 @@ def cleanData(file, path):
         data = data.drop(data.index[badRows])  # Actually remove any necessary rows
     data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
 
-    return ( data, launchDateTime )  # return cleaned pandas data frame and time of launch
+    return data  # return cleaned pandas data frame
+
+def readFromData(file, path):
+    # Open and investigate the file
+
+    # Establish default values, in case not contained in profile
+    launchDateTime = datetime.datetime.now()
+    pblHeight = 1500
+
+    f = open(os.path.join(path, file), 'r')
+    print("\nOpening file " + file + ":")
+    for line in f:  # Iterate through file, line by line
+
+        if line.rstrip() == "Flight Information:":
+            dateTimeInfo = f.readline().split()
+            dateTimeInfo = ' '.join(dateTimeInfo[2:6] + [dateTimeInfo[8]])
+            launchDateTime = datetime.datetime.strptime(dateTimeInfo, '%A, %d %B %Y %H:%M:%S')
+
+        if line.rstrip() == "PBL Information:":
+            pblHeight = float(f.readine().split()[3])
+
+    f.close()  # Need to close opened file
+
+    return launchDateTime, pblHeight
+
 
 ########## PERFORMING ANALYSIS ##########
 

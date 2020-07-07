@@ -1,6 +1,6 @@
 from WaveDetectionFunctions import getAllUserInput
 from WaveDetectionFunctions import cleanData
-from WaveDetectionFunctions import calculatePBL
+from WaveDetectionFunctions import readFromData
 from WaveDetectionFunctions import interpolateData
 from WaveDetectionFunctions import drawPlots
 from WaveDetectionFunctions import waveletTransform
@@ -26,9 +26,9 @@ userInput = getAllUserInput()
 # Then, iterate over files in data directory
 for file in os.listdir( userInput.get('dataSource') ):
     # Import and clean the data, given the file path
-    data, launchDateTime = cleanData( file, userInput.get('dataSource') )
+    data = cleanData( file, userInput.get('dataSource') )
     if not data.empty:
-        pblHeight = calculatePBL( data )
+        launchDateTime, pblHeight = readFromData( file, userInput.get('dataSource'))
         spatialResolution = 5  # meters in between uniformly distributed data points, must be pos integer
         data = interpolateData( data, spatialResolution, pblHeight, launchDateTime )
         if not data.empty:
