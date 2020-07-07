@@ -1,0 +1,19 @@
+{
+    "waves": {
+        "wave1": {
+            "Altitude [km]": 17.124,
+            "Latitude [deg]": -30.348499,
+            "Longitude [deg]": -70.45490500000001,
+            "Vertical wavelength [km]": 3.36295,
+            "Horizontal wavelength [km]": 49.6141572265354,
+            "Angle of wave [deg]": 0.7664670039074553,
+            "Axial ratio [no units]": 9.082804216124227,
+            "Intrinsic vertical group velocity [m/s]": 0.6799215068889345,
+            "Intrinsic horizontal group velocity [m/s]": 10.03099437829598,
+            "Intrinsic vertical phase speed [m/s]": -0.6882643751354003,
+            "Intrinsic horizontal phase speed [m/s]": -10.154078092564829,
+            "Degree of Polarization [WHAT IS THIS???]": 0.9874520839809315,
+            "Mysterious parameter Q [who knows]": -210066.64788597584
+        }
+    }
+}

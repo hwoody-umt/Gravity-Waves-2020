@@ -10,8 +10,7 @@ from scipy import interpolate  # Used for PBL calculations
 import pywt  # Library PyWavelets, for wavelet transforms
 from skimage.feature import peak_local_max  # Find local max
 from scipy.ndimage.morphology import binary_fill_holes  # Help surround local max
-#import cmath  # Complex numbers... I'm still not sure how these work in the analysis
-import csv
+import datetime  # Turning time into dates
 
 ########## PBL AND STABILITY CALCULATIONS ##########
 
@@ -51,7 +50,7 @@ def pblri(pt, u, v, hi):
     # Need a way to pick which one is the right one... there are many
     if len(f.roots()) == 0:
         return [0]
-    return f.roots()
+    return f.roots()[0]
 
 def pblpt(Alt, pot, hi):
     maxhidx = np.argmax(Alt)
@@ -67,7 +66,7 @@ def pblpt(Alt, pot, hi):
     dp = np.gradient(pt3k, height3k)
     maxpidx = np.argmax(dp)
     pbl_potential_temperature = Alt[maxpidx]
-    return str(pbl_potential_temperature)
+    return pbl_potential_temperature
 
 def pblsh(hi, rvv):
     maxhidx = np.argmax(hi)
@@ -118,7 +117,7 @@ def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeigh
     print("Displaying data plots")
 
     # Plot radiosonde path
-    plt.plot(data['Long.'], data['Lat.'])
+    #plt.plot(data['Long.'], data['Lat.'])
     plt.ylabel("Latitude [degrees]")
     plt.xlabel("Longitude [degrees]")
     plt.title("Radiosonde Flight Path")
@@ -163,9 +162,11 @@ def calculatePBL(data):
     v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
     # Get three different PBL height estimations
-    pblHeightRI = pblri(pot, u, v, hi)
-    pblHeightVPT = pblvpt(vpt, hi)
-    pblHeightPT = pblpt(data['Alt'],pot,hi)
+    #pblHeightRI = pblri(pot, u, v, hi)
+    pblHeightRI = 1500  # Fix above line, get Hannah's code and figure the shit out
+    #pblHeightVPT = pblvpt(vpt, hi)
+    pblHeightVPT = 1500  # Same here
+    pblHeightPT = pblpt(data['Alt'], pot, hi)
     pblHeightSH = pblsh(hi, rvv)
 
     # Make preliminary analysis plots, dependent on user input showPlots
@@ -174,7 +175,7 @@ def calculatePBL(data):
 
     # Calculate which PBL height to use
     # pblHeight = max(pblHeightRI), pblHeightPT, pblHeightSH)
-    pblHeight = np.max([pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH])
+    pblHeight = np.max(np.array([pblHeightRI, pblHeightVPT, pblHeightPT, pblHeightSH]))
     print("Calculated PBL height of " + str(pblHeight))
     print(layerStability(hi, pot))
     return pblHeight  # Return best guess for pbl height
@@ -234,17 +235,23 @@ def getAllUserInput():
 
 def cleanData(file, path):
     # If file is not a txt file, end now
-    if  not file.endswith(".txt"):
+    if not file.endswith(".txt"):
         print("\nFile "+file+" is not a text file, ending analysis.")
-        return pd.DataFrame()  # Empty data frame means end analysis
+        return pd.DataFrame(), 0  # Empty data frame means end analysis
 
 
     # Open and investigate the file
     contents = ""
     isProfile = False  # Check to see if this is a GRAWMET profile
+    launchDateTime = datetime.datetime.now()
     f = open(os.path.join(path, file), 'r')
     print("\nOpening file "+file+":")
     for line in f:  # Iterate through file, line by line
+        if line.rstrip() == "Flight Information:":
+            dateTimeInfo = f.readline().split()
+            dateTimeInfo = ' '.join(dateTimeInfo[2:6] + [dateTimeInfo[8]])
+            launchDateTime = datetime.datetime.strptime(dateTimeInfo, '%A, %d %B %Y %H:%M:%S')
+
         if line.rstrip() == "Profile Data:":
             isProfile = True  # We found the start of the real data in GRAWMET profile format
             contents = f.read()  # Read in rest of file, discarding header
@@ -294,11 +301,11 @@ def cleanData(file, path):
         data = data.drop(data.index[badRows])  # Actually remove any necessary rows
     data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
 
-    return data  # return cleaned pandas data frame
+    return ( data, launchDateTime )  # return cleaned pandas data frame and time of launch
 
 ########## PERFORMING ANALYSIS ##########
 
-def interpolateData(data, spatialResolution, pblHeight):
+def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
 
     # First, filter data to remove sub-PBL data
     data = data[ (data['Alt'] - data['Alt'][0]) >= pblHeight]
@@ -317,13 +324,18 @@ def interpolateData(data, spatialResolution, pblHeight):
     data = data.interpolate(method="linear", limit=missingDataLimit)
 
     if data.isnull().values.any():  # More than 1000 meters missing data
-        print("Found more than "+missingDataLimit+" consecutive missing data, quitting analysis.")
+        print("Found more than "+str(missingDataLimit)+" consecutive missing data, quitting analysis.")
         return pd.DataFrame()
 
     data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
     keepIndex = np.arange(0, len(data['Alt']), spatialResolution)  # Index altitude by spatialRes
     data = data.iloc[keepIndex, :]  # Keep data according to index
     data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
+
+    times = data['Time'].copy()  # Make a copy of the column to stop warnings about inadvertent copying
+    for n in range(len(times)):  # Iterate through time, turning times into datetime objects
+        times[n] = launchDateTime + datetime.timedelta(seconds=float(times[n]))  # Add flight time to launch start
+    data['Time'] = times  # Assign copy back to original data column
 
     return data  # Return pandas data frame
 
@@ -377,61 +389,146 @@ def waveletTransform(data, spatialResolution, wavelet):
         'constant': magicConstant
     }
 
+    #np.save("wavelets.npy", results)
+    #data.to_csv("dataex.csv", index=False)
+
     return results  # Dictionary of wavelet-transformed surfaces
 
 def findPeaks(power):
 
     # Find and return coordinates of local maximums
-    print("Isolating local maximums... ", end='')
-    cutOff = 0.50  # Disregard maximums less than cutOff * imageMax
+    cutOff = 0.4  # Disregard maximums less than cutOff * imageMax
     margin = 10  # Disregard maximums less than margin from image border, must be pos integer
-    distance = 25  # Disregard maximums less than distance away from each other, must be pos integer
+    distance = 10  # Disregard maximums less than distance away from each other, must be pos integer
     # Finds local maxima based on distance, cutOff, margin
     peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
 
     return peaks  # Array of coordinate arrays
 
-def searchNearby(iR, iC, power, regions, cutOff, tol):
-    list1 = np.arange(iR - tol, iR + tol)
-    list2 = np.arange(iC - tol, iC + tol)
-    for r in list1:
-        for c in list2:
-            # Find super fast way to do this check... try except clause?
-            # if (r in range(regions.shape[0])) and (c in range(regions.shape[1])):  # out of bounds :P
-            if (not regions[r, c]) and cutOff < power[r, c] <= power[iR, iC]:
-                regions[r, c] = True
-                regions = searchNearby(r, c, power, regions, cutOff, tol)
-    return regions
+# Older peak finding code is here
+# def findPeaks(power):
+#
+#     # Find and return coordinates of local maximums
+#     cutOff = 0.50  # Disregard maximums less than cutOff * imageMax
+#     margin = 10  # Disregard maximums less than margin from image border, must be pos integer
+#     distance = 25  # Disregard maximums less than distance away from each other, must be pos integer
+#     # Finds local maxima based on distance, cutOff, margin
+#     peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
+#
+#     return peaks  # Array of coordinate arrays
 
-def displayProgress(peaks, count):
+def displayProgress(peaks, length):
 
     # Console output to keep user from getting too bored
-    if count == 0:  # First, need to print precursor to numbers
-        print("tracing peak "+str(count + 1)+"/"+str(len(peaks)), end='')
-    elif count > 10:  # Two digit number
-        print("\b\b\b\b\b" + str(count + 1) + "/" + str(len(peaks)), end='')
-    else:  # One digit number
-        print("\b\b\b\b"+str(count + 1)+"/"+str(len(peaks)), end='')
-    # Increment counter
-    return count + 1  # Return incremented counter
+    print("\rTracing and analyzing peak " + str(length - len(peaks)) + "/" + str(length), end='')
+
+def searchNearby(row, col, region, power, powerLimit, tol):
+    for r in range(row-tol, row+tol+1):
+        for c in range(col-tol, col+tol+1):
+            try:
+                if not region[r,c] and powerLimit < power[r,c]:# <= power[row, col]+1:
+                    region[r,c] = True
+                    region = searchNearby(r,c, region, power, powerLimit, tol)
+            except IndexError:
+                pass
+    return region
 
 def findPeakRegion(power, peak):
-    # Initialize regions to False
-    regions = np.zeros(power.shape, dtype=bool)
+    region = np.zeros(power.shape, dtype=bool)
+    region[peak[0], peak[1]] = True
 
-    # Get peak coordinates
-    row = peak[0]
-    col = peak[1]
+    powerLimit = 0.75 * power[peak[0], peak[1]]
 
-    # Recursively check power surface downhill until hitting low power limit
-    powerLimit = 0.5  # Percentage of peak height to form lower barrier
-    flexibility = 5  # Number of indices algorithm is allowed to reach, 1 means can only flag adjacent cells
-    regions = searchNearby(row, col, power, regions, powerLimit * power[row, col], flexibility)
+    tolerance = 2
 
-    # Fill in local maximums that were surrounded but ignored
-    regions = binary_fill_holes(regions)
+    try:
+        region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
+        region = binary_fill_holes(region)
+    except RecursionError:
+        try:
+            region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
+            region = binary_fill_holes(region)
+        except RecursionError:
+            pass
 
-    return regions  # Boolean mask showing region surrounding peak
+    return region
+
+# Older region finding code is here
+# def searchPowerSurface(X, Y, row, col, rMod, cMod, power, powerLimit, initialCall):
+#     # This method needs hella comments, get to it eventually
+#     onEdge = False
+#     iRow = row
+#     iCol = col
+#     iRMod = rMod
+#     iCMod = cMod
+#     while power[row, col] > powerLimit:
+#         if (row == 0 or row == power.shape[0] - 1) and rMod is not 0:
+#             if onEdge:
+#                 return X, Y
+#             rMod = 0
+#             onEdge = True
+#             if cMod == 0:
+#                 if initialCall:
+#                     cMod = 1
+#                     X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
+#                 else:
+#                     cMod = -1
+#
+#         if (col == 0 or col == power.shape[1] - 1) and cMod is not 0:
+#             if onEdge:
+#                 return X, Y
+#
+#             cMod = 0
+#             onEdge = True
+#             if rMod == 0:
+#                 if initialCall:
+#                     rMod = 1
+#                     X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
+#                 else:
+#                     rMod = -1
+#         row += rMod
+#         col += cMod
+#
+#     Y.append([row])
+#     X.append([col])
+#     return X, Y
+#
+# def findPeakRegion(power, peak):
+#     # This method needs hella comments too, and cleaning up in the looks department
+#
+#     # Initialize regions to False
+#     region = np.zeros(power.shape, dtype=bool)
+#
+#     # Get peak coordinates
+#     r = peak[0]
+#     c = peak[1]
+#
+#
+#     powerLimit = 0.25  # Percentage of peak height to form lower barrier
+#     powerLimit = powerLimit * power[r, c]
+#
+#     X, Y = ( [], [] )
+#
+#     for rMod in [-1,0,1]:
+#         for cMod in [-1,0,1]:
+#             if (rMod is not 0) or (cMod is not 0):
+#                 X, Y = searchPowerSurface(X, Y, r, c, rMod, cMod, power, powerLimit, True)
+#
+#     # Formulate and solve the least squares problem ||Ax - b ||^2
+#     A = np.hstack( (np.power(X,2), np.multiply(X, Y), np.power(Y,2), X, Y) )
+#     b = np.ones_like(X)
+#     x = np.linalg.lstsq(A, b, rcond=None)[0].squeeze()
+#
+#     if x[1] ** 2 - 4 * x[0] * x[2] >= 0:  # Fit is hyperbolic/parabolic, not elliptical
+#         region[r, c] = True  # Remove peak from list
+#         return region  # Didn't find anything
+#
+#     X_coord, Y_coord = np.meshgrid(range(region.shape[1]), range(region.shape[0]))
+#     region = x[0] * X_coord ** 2 + x[1] * X_coord * Y_coord + x[2] * Y_coord ** 2 + x[3] * X_coord + x[4] * Y_coord
+#
+#     region = ( region.astype(int) > 0 )
+#
+#     return region  # Boolean mask showing region surrounding peak
 
 def removePeaks(region, peaks):
     # Remove local maxima that have already been traced from peaks list
@@ -440,35 +537,31 @@ def removePeaks(region, peaks):
     for n in range(len(peaks)):
         if region[peaks[n][0], peaks[n][1]]:  # If peak in region,
             toRem.append(n)  # add peak to removal index
-    peaks = np.delete(peaks, toRem)  # Then remove those peaks from peaks list
-
+    peaks = [ value for (i, value) in enumerate(peaks) if i not in set(toRem) ]  # Then remove those peaks from peaks list
     return peaks  # Return shortened list of peaks
 
 def updatePlotter(region, plotter):
     # Copy the peak estimate to a plotting map
-
-    # Iterate over cells in region
-    for row in range(region.shape[0]):
-        for col in range(region.shape[1]):
-            # Add True cells in region to plotting map
-            if region[row, col]:
-                plotter[row, col] = True
+    plotter[region] = True
 
     return plotter  # Return plotting boolean mask
 
 def invertWaveletTransform(region, wavelets):
     # Invert the wavelet transform in traced region
 
-    uTrim = wavelets.get('coefU')
+    uTrim = wavelets.get('coefU').copy()
+    #print("Nonzero elements of U: " + str(np.count_nonzero(uTrim)))
     uTrim[np.invert(region)] = 0  # Trim U based on region
+    #print("Nonzero elements of U: " + str(np.count_nonzero(uTrim)))
     # Sum across columns of U, then multiply by mysterious constant
     uTrim = np.multiply([sum(x) for x in uTrim.T.tolist()], wavelets.get('constant'))
+    #print("Nonzero elements of U: " + str(np.count_nonzero(uTrim)))
     # Do the same with V
-    vTrim = wavelets.get('coefV')
+    vTrim = wavelets.get('coefV').copy()
     vTrim[np.invert(region)] = 0
     vTrim = np.multiply( [ sum(x) for x in vTrim.T.tolist() ], wavelets.get('constant') )
     # Again with T
-    tTrim = wavelets.get('coefT')
+    tTrim = wavelets.get('coefT').copy()
     tTrim[np.invert(region)] = 0
     tTrim = np.multiply( [ sum(x) for x in tTrim.T.tolist() ], wavelets.get('constant') )
 
@@ -481,20 +574,18 @@ def invertWaveletTransform(region, wavelets):
 
     return results  # Dictionary of trimmed inverted U, V, and T
 
-def getParameters(data, wave, spatialResolution):
-
+def getParameters(data, wave, spatialResolution, region):
     # Find wind variance, why? I don't know.
-    windVariance = wave.get('uTrim') ** 2 + wave.get('vTrim') ** 2  # What is this, why do we care?
+    windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2  # What is this, why do we care?
 
     # Why do we do this? I have no idea...
-    index = windVariance >= 0.5 * np.max(windVariance)
-    uTrim = wave.get('uTrim')[ index ]
-    vTrim = wave.get('vTrim')[ index ]
-    tTrim = wave.get('tTrim')[ index ]
+    uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
+    vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
+    tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
 
     # Seperate imaginary/real parts
     vHilbert = vTrim.imag
-    uvComp = [ uTrim, vTrim ]
+    uvComp = [uTrim, vTrim]
     uTrim = uTrim.real
     vTrim = vTrim.real
 
@@ -507,74 +598,78 @@ def getParameters(data, wave, spatialResolution):
     D = np.mean(uTrim ** 2) - np.mean(vTrim ** 2)
     P = np.mean(2 * uTrim * vTrim)
     Q = np.mean(2 * uTrim * vHilbert)
-    degPolar = np.sqrt( D**2 + P**2 + Q**2 ) / I
+    degPolar = np.sqrt(D ** 2 + P ** 2 + Q ** 2) / I
 
     # Tests, I need to figure out why these make sense
-    if abs(P) < 0.05 or abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
-        print("\nShit it's bad.")
-        print(abs(P))
-        print(abs(Q))
-        print(degPolar)
+    if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
+        # print("\nShit it's bad.")
+        # print(np.abs(P))
+        # print(np.abs(Q))
+        # print(degPolar)
         return {}
 
     theta = 0.5 * np.arctan2(P, D)  # What the hell?
-    axialRatio = abs( 1 / np.tan( 0.5 * np.arcsin( Q / ( degPolar * I ) ) ) )  # What is this?
+    axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))  # What is this?
 
     # Classic 2x2 rotation matrix
-    rotate = [ [np.cos(theta), np.sin(theta) ], [-np.sin(theta), np.cos(theta) ] ]
-    uvComp = np.dot( rotate, uvComp )  # Rotate so u and v components parallel/perpendicular to propogation direction
-    gamma = np.mean( uvComp[0] * np.conj(tTrim) ) / np.sqrt( np.mean( abs(uvComp[0])**2 ) * np.mean( abs(tTrim)**2 ) )
+    rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
+    uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
+    gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
     if np.angle(gamma) < 0:
         theta = theta + np.pi
-    coriolisF = 2 * 7.2921 * 10**(-5) * np.sin( np.mean(data['Lat.']) * 180 / np.pi )
+    coriolisF = 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi)
     intrinsicF = coriolisF * axialRatio
     bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared???
-    bvMean = np.mean( np.array(bvF2)[ np.nonzero( [ sum(x) for x in region.T ] ) ] )  # Mean of bvF2 across region
+    bvMean = np.mean(np.array(bvF2)[np.nonzero([sum(x) for x in region.T])])  # Mean of bvF2 across region
 
-    if not np.sqrt(bvMean) > abs(intrinsicF) > abs(coriolisF):
-        print("\nTriple shit")
-        print(np.sqrt(bvMean))
-        print(intrinsicF)
-        print(coriolisF)
+    if not np.sqrt(bvMean) > np.abs(intrinsicF) > np.abs(coriolisF):
+        # print("\nTriple shit")
+        # print(np.sqrt(bvMean))
+        # print(intrinsicF)
+        # print(coriolisF)
         return {}
 
     # Vertical wavenumber [1/m]
-    m = 2 * np.pi / np.mean( np.array(1.03 * wave.get('scales'))[ np.nonzero( [ sum(x) for x in region ] ) ] )
+    m = 2 * np.pi / np.mean(np.array(1.03 * wave.get('scales'))[np.nonzero([sum(x) for x in region])])
     # Horizontal wavenumber [1/m]
-    kh = np.sqrt( ( ( coriolisF**2 * m**2 ) / bvMean ) * ( intrinsicF**2 / coriolisF**2 - 1) )
+    kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvMean) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
     # I don't really know [m/s]
-    intrinsicVerticalGroupVel = - (1 / (intrinsicF * m)) * (intrinsicF**2 - coriolisF**2)
+    intrinsicVerticalGroupVel = - (1 / (intrinsicF * m)) * (intrinsicF ** 2 - coriolisF ** 2)
     # Same [1/m]
-    zonalWaveNumber = kh * np.sin(theta)
+    #zonalWaveNumber = kh * np.sin(theta)
     # Same [1/m]
-    meridionalWaveNumber = kh * np.cos(theta)
+    #meridionalWaveNumber = kh * np.cos(theta)
     # Same [m/s]
     intrinsicVerticalPhaseSpeed = intrinsicF / m
     # Same [m/s]
     intrinsicHorizPhaseSpeed = intrinsicF / kh
     # Same [m/s]
-    intrinsicZonalGroupVel = zonalWaveNumber * bvMean / (intrinsicF * m**2)
+    intrinsicZonalGroupVel = kh * np.sin(theta) * bvMean / (intrinsicF * m ** 2)
     # Same [m/s]
-    intrinsicMeridionalGroupVel = meridionalWaveNumber * bvMean / (intrinsicF * m**2)
+    intrinsicMeridionalGroupVel = kh * np.cos(theta) * bvMean / (intrinsicF * m ** 2)
     # Same [m/s]
-    intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel**2 + intrinsicMeridionalGroupVel**2)
+    intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel ** 2 + intrinsicMeridionalGroupVel ** 2)
     # Horizontal wavelength? [m]
     lambda_h = 2 * np.pi / kh
     # Just average altitude of wave [m]
-    altitudeOfDetection = np.mean( np.array(data['Alt'])[ np.nonzero( [ sum(x) for x in region.T ] ) ])
+    altitudeOfDetection = np.mean(np.array(data['Alt'])[np.nonzero([sum(x) for x in region.T])])
     # Get index of mean altitude
-    detectionIndex = np.where(np.min(np.abs(data['Alt'] - altitudeOfDetection)))
+    detectionIndex = [np.min(np.abs(data['Alt'] - altitudeOfDetection)) == np.abs(data['Alt'] - altitudeOfDetection)]
     # Get latitude at index
-    latitudeOfDetection = np.array(data['Lat.'])[detectionIndex]
+    latitudeOfDetection = np.array(data['Lat.'])[tuple(detectionIndex)]
     # Get longitude at index
-    longitudeOfDetection = np.array(data['Long.'])[detectionIndex]
+    longitudeOfDetection = np.array(data['Long.'])[tuple(detectionIndex)]
+    # Get flight time at index
+    timeOfDetection = np.array(data['Time'])[tuple(detectionIndex)]
+
     # Assemble wave properties into dictionary
     waveProp = {
-        'Altitude [km]': altitudeOfDetection/1000,
-        'Latitude [deg]': latitudeOfDetection,
-        'Longitude [deg]': longitudeOfDetection,
-        'Vertical wavelength [km]': (2*np.pi/m)/1000,
-        'Horizontal wavelength [km]': lambda_h/1000,
+        'Altitude [km]': altitudeOfDetection / 1000,
+        'Latitude [deg]': latitudeOfDetection[0],
+        'Longitude [deg]': longitudeOfDetection[0],
+        'Date and Time [UTC]': timeOfDetection[0],
+        'Vertical wavelength [km]': (2 * np.pi / m) / 1000,
+        'Horizontal wavelength [km]': lambda_h / 1000,
         'Angle of wave [deg]': theta,
         'Axial ratio [no units]': axialRatio,
         'Intrinsic vertical group velocity [m/s]': intrinsicVerticalGroupVel,
@@ -586,74 +681,3 @@ def getParameters(data, wave, spatialResolution):
     }
 
     return waveProp  # Dictionary of wave characteristics
-
-
-########## ACTUAL RUNNING CODE ##########
-
-# First, get applicable user input.
-userInput = getAllUserInput()
-# Then, iterate over files in data directory
-for file in os.listdir( userInput.get('dataSource') ):
-    # Import and clean the data, given the file path
-    data = cleanData( file, userInput.get('dataSource') )
-    if not data.empty:
-        pblHeight = calculatePBL( data )
-        spatialResolution = 5  # meters in between uniformly distributed data points, must be pos integer
-        data = interpolateData( data, spatialResolution, pblHeight )
-        if not data.empty:
-            data.to_csv("dataex.csv")
-            if userInput.get('showPlots'):
-                drawPlots( data['Alt'], data['T'], data['Dewp.'], pblHeight )
-            # Get the stuff... comment better later!
-            wavelets = waveletTransform( data, spatialResolution, 'cmor2-6')  # Use morlet wavelet
-            # Find local maximums in power surface
-            peaks = findPeaks( wavelets.get('power') )
-
-            # Numpy array for plotting purposes
-            plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
-            count = 0  # Counter to output progress
-
-            waves = []  # Empty list, to contain wave characteristics
-
-            # Iterate over local maximums to identify wave characteristics
-            while len(peaks > 0):
-                # Output progress to console and increment counter
-                count = displayProgress( peaks, count )
-                # Identify the region surrounding the peak
-                region = findPeakRegion( wavelets.get('power'), peaks[count - 1] )
-                # Update list of peaks that have yet to be analyzed
-                peaks = removePeaks( region, peaks )
-                # Update plotting mask
-                plotter = updatePlotter( region, plotter )
-
-                # Get inverted regional maximums
-                wave = invertWaveletTransform( region, wavelets )
-                # Get wave parameters
-                parameters = getParameters( data, wave, spatialResolution )
-                if parameters:
-                    #print(parameters)  # Just for debugging right now...
-                    waves = waves.append(parameters)
-
-            # Save waves data here, if saveData boolean is true
-            print(waves)
-            # Also, build nice output plot
-            plt.figure()
-            plt.imshow( wavelets.get('power'), extent=[data['Alt'][0:-1]/1000, (1 / pywt.scale2frequency('morl',wavelets.get('scales')))[0:-1] ] )
-            cb = plt.colorbar()
-            plt.contour(data['Alt'] / 1000, 1 / pywt.scale2frequency('morl',wavelets.get('scales')), plotter, colors='red')
-            # plt.contour(data['Alt'], freq, power, colors='red')
-            plt.xlabel("Altitude [km]")
-            plt.ylabel("Period [m]")
-            plt.title("Ummmmm")
-            cb.set_label("Power [m^2/s^2]")
-
-            if userInput.get('saveData'):
-                plt.savefig(userInput.get('savePath') + "/" + file[0:-4] + "_power_surface.png")
-            if userInput.get('showPlots'):
-                plt.show()
-            plt.close()
-            print("Finished analysis.")
-
-########## FINISHED ANALYSIS ##########
-print("\nAnalyzed all files in folder "+userInput.get('dataSource')+"/")
-
