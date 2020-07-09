@@ -7,6 +7,7 @@ import WaveDetectionFunctions as fun
 
 
 dataSource = fun.getUserInputFile("Enter path to data input directory: ")
+saveData = fun.getUserInputTF("Would you like to save PBL output to the GRAWMET profiles?")
 
 
 for file in os.listdir(dataSource):
@@ -15,6 +16,7 @@ for file in os.listdir(dataSource):
     data = fun.cleanData(file, dataSource)
 
     if data.empty:  # File is not a GRAWMET profile
+        print("File does not appear to be a GRAWMET profile, quitting analysis...")
         continue  # Skip to next file and try again
 
     # Get launchDateTime for interpolateData() function, ignore default pblHeight
@@ -28,19 +30,19 @@ for file in os.listdir(dataSource):
     if data.empty:  # File has too much sequential missing data, analysis will be invalid
         continue  # Skip to next file and try again
 
-    print("Calculating PBL height for "+str(file))
+    print("Calculating PBL height")
 
     ##### The following are all the variables and equations needed for predicting PBL Height
 
     hi = data['Alt'] - data['Alt'][0]  # height above ground in meters
+
     epsilon = 0.622  # epsilon, unitless constant
 
     # vapor pressure
-    e = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T']))) * data[
-        'Hu']  # hPa
+    e = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T']))) * data['Hu']  # hPa
 
     # water vapor mixing ratio
-    rvv = (epsilon * e) / (data['P'] - e)  # unitless
+    rvv = np.divide( np.multiply( np.array(e), epsilon ), ( np.array(data['P']) - np.array(e) ) )  # unitless
 
     # potential temperature
     pot = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
@@ -49,7 +51,7 @@ for file in os.listdir(dataSource):
     vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
 
     # absolute virtual temperature
-    vt = (data['T'] + 273.15) * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
+    #vt = (data['T'] + 273.15) * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
 
     # u and v (east & north?) components of wind speed
     u = -data['Ws'] * np.sin(data['Wd'] * np.pi / 180)
@@ -58,31 +60,38 @@ for file in os.listdir(dataSource):
     # CALL THE FUNCTIONS YOU WANT TO USE
     # Only functions that are called in this section will display in the output data
     pblHeightRI = fun.pblRI(vpt, u, v, hi)  # RI method
-    pblHeightVPT = fun.pblVPT(pot, rvv, vpt, hi)  # Virtual potential temperature method
+    pblHeightVPT = fun.pblVPT(vpt, hi)  # Virtual potential temperature method
     pblHeightPT = fun.pblPT(hi, pot)  # Potential temperature method
     pblHeightSH = fun.pblSH(hi, rvv)  # Specific humidity method
 
+    # Find min, max, and median PBL values
     pbls = [pblHeightSH, pblHeightVPT, pblHeightPT, pblHeightRI]
     pblHeightMax = np.max(pbls)
     pblHeightMin = np.min(pbls)
-    pblHeightMean = np.mean(pbls)
+    pblHeightMedian = np.median(pbls)  # Median is the best
 
-    print("Calculated PBL (min, mean, max) heights of (" + str(pblHeightMin) + ", " + str(pblHeightMean) + ", " + str(pblHeightMax) + ")")
+    print("Calculated PBL height of " + str(pblHeightMedian) + " meters above ground level.")
     print(fun.layerStability(hi, pot))  # Print the layer stability, while we're at it
 
     ##### Now write max PBL height to profile file
 
-    stringToWrite = "Max PBL height: " + str(pblHeightMax) + " "
-    stringToWrite += "Min PBL height: " + str(pblHeightMin) + " "
-    stringToWrite += "Mean PBL height: " + str(pblHeightMean)
+    if saveData:
 
-    with open(os.path.join(dataSource, file), "rw") as f:
-        contents = f.readlines()  # Read in entire file as list of lines
+        stringToWrite = "Max PBL height:\t" + str(pblHeightMax) + "\t"
+        stringToWrite += "Min PBL height:\t" + str(pblHeightMin) + "\t"
+        stringToWrite += "Median PBL height:\t" + str(pblHeightMedian) + "\n\n"
 
-        beginIndex = (contents.rstrip() == "Profile Data:")  # Find beginning of main section
+        contents = []  # Initialize empty list
+
+        with open(os.path.join(dataSource, file), "r") as f:
+            contents = f.readlines()  # Read in entire file as list of lines
+
+        beginIndex = [i for i in range(len(contents)) if contents[i].rstrip() == "Profile Data:"]  # Find beginning of main section
+        beginIndex = beginIndex[0]
 
         # Insert pbl information into contents before main section begins
-        contents.insert(beginIndex, "PBL Information:")
-        contents.insert(beginIndex, stringToWrite)
+        #contents.insert(beginIndex, stringToWrite)
+        contents.insert(beginIndex, "PBL Information:\n")
 
-        f.writelines(contents)  # Write new contents to the original profile file
+        with open(os.path.join(dataSource, file), "w") as f:
+            f.writelines(contents)  # Write new contents to the original profile file
