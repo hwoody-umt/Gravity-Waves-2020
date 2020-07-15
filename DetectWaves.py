@@ -1,17 +1,4 @@
-from WaveDetectionFunctions import getAllUserInput
-from WaveDetectionFunctions import cleanData
-from WaveDetectionFunctions import readFromData
-from WaveDetectionFunctions import interpolateData
-from WaveDetectionFunctions import drawPlots
-from WaveDetectionFunctions import waveletTransform
-from WaveDetectionFunctions import findPeaks
-from WaveDetectionFunctions import displayProgress
-from WaveDetectionFunctions import findPeakRegion
-from WaveDetectionFunctions import removePeaks
-from WaveDetectionFunctions import updatePlotter
-from WaveDetectionFunctions import invertWaveletTransform
-from WaveDetectionFunctions import getParameters
-
+from WaveDetectionFunctions import getAllUserInput, cleanData, readFromData, interpolateData, drawPlots, waveletTransform, findPeaks, displayProgress, findPeakRegion, removePeaks, updatePlotter, invertWaveletTransform, getParameters
 import numpy as np
 import pywt
 import os
@@ -58,7 +45,7 @@ for file in os.listdir( userInput.get('dataSource') ):
                 # Update list of peaks that have yet to be analyzed
                 peaks = removePeaks( region, peaks )
 
-                if region.sum().sum() == 1:  # Only found the peak, not the region
+                if region.sum().sum() <= 1:  # Only found the peak, not the region
                     continue  # Don't bother analyzing the single cell
 
                 # Update plotting mask
@@ -67,7 +54,30 @@ for file in os.listdir( userInput.get('dataSource') ):
                 # Get inverted regional maximums
                 wave = invertWaveletTransform( region, wavelets )
                 # Get wave parameters
+
+                yScale = (2 * np.pi / pywt.scale2frequency('cmor2-6', wavelets.get('scales'))) / 1000
+
+                extents = [
+                    data['Alt'][0] / 1000,
+                    data['Alt'][len(data['Alt']) - 1] / 1000,
+                    yScale[0],
+                    yScale[len(yScale) - 1]
+                ]
+                plt.figure()
+                plt.imshow(wavelets.get('power'),
+                           extent=extents)
+                plt.axes().set_aspect('auto')
+                cb = plt.colorbar()
+                plt.contour(data['Alt'] / 1000, np.flip(yScale), region,
+                            colors='red')
+                plt.xlabel("Altitude [km]")
+                plt.ylabel("Vertical Wavelength [km]")
+                plt.title("Power surface, including traced peaks")
+                cb.set_label("Power [m^2/s^2]")
+                plt.show()
+
                 parameters = getParameters( data, wave, spatialResolution, region )
+                # If found, save parameters to dictionary of waves
                 if parameters:
                     name = 'wave' + str(waveCount)
                     waves['waves'][name] = parameters

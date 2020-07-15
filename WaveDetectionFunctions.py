@@ -242,7 +242,7 @@ def cleanData(file, path):
     # If file is not a txt file, end now
     if not file.endswith(".txt"):
         print("\nFile "+file+" is not a text file, ending analysis.")
-        return pd.DataFrame(), 0  # Empty data frame means end analysis
+        return pd.DataFrame()  # Empty data frame means end analysis
 
 
     # Open and investigate the file
@@ -382,10 +382,22 @@ def waveletTransform(data, spatialResolution, wavelet):
     v = v - rMean
 
     # List of wavelet scales to iterate over
-    scaleResolution = 10  # How far apart to choose list of scales
-    scales = np.arange(10, 4000, scaleResolution)  # How should we pick the scales???
-    # Above range seems to be good (via visual inspection), but a logarithmic resolution I think is the way to go... to fix later
-    # Possibly look at literature for frequency, then convert to scale and figure it out?
+    scales = np.arange(100, 100000, 200)  # Below scales are broken, this needs to be figured out.
+    # Scales based on Zink and Vincent, Figure 1c
+    #scales = np.arange(0, 4, 1 / 100)
+    #scales = 100 * 10**(scales)
+
+    # Lay groundwork for inversions, outside of local max. loop
+    # Derived from Torrence & Compo, 1998, Equations 11, 12, & 13 and Table 1
+    k = np.arange(1, len(scales) - 1)
+    frequencies = 2 * np.pi * k / (len(scales) * spatialResolution)
+    frequencies[k > len(scales) / 2] = -frequencies[k > len(scales) / 2]
+    deltaWavelet = np.zeros(len(scales))
+    for n in range(len(deltaWavelet)):
+        for w in frequencies:
+            deltaWavelet[n] += np.exp(-(scales[n] * w - 6) ** 2 / 2)
+    deltaWavelet = deltaWavelet / (len(scales) * np.pi ** 0.25)
+    reconstructionConstant = 1 / np.divide(deltaWavelet, np.sqrt(scales)).sum()
 
     # Now, do the actual wavelet transform
     print("Performing wavelet transform on U... (1/3)", end='')  # Console output, to be updated
@@ -398,10 +410,7 @@ def waveletTransform(data, spatialResolution, wavelet):
     # Power surface is sum of squares of u and v wavelet transformed surfaces
     power = abs(coefU) ** 2 + abs(coefV) ** 2  # abs() gets magnitude of complex number
 
-    # Lay groundwork for inversions, outside of local max. loop
-    # Magic constant hypothetically from Torrence and Compo, Table 2 & Eqn 11
-    magicConstant = scaleResolution * np.sqrt(spatialResolution) / (0.776 * np.pi ** 0.25)  # Investigate, figure this out
-    # Divide each column by sqrt(scales)
+    # Divide each column by sqrt of the scales so that it doesn't need to be done later to invert wavelet transform
     for col in range(coefU.shape[1]):
         coefU[:, col] = coefU[:, col] / np.sqrt(scales)
         coefV[:, col] = coefV[:, col] / np.sqrt(scales)
@@ -413,7 +422,7 @@ def waveletTransform(data, spatialResolution, wavelet):
         'coefV': coefV,
         'coefT': coefT,
         'scales': scales,
-        'constant': magicConstant
+        'constant': reconstructionConstant
     }
 
     #np.save("wavelets.npy", results)
@@ -424,25 +433,12 @@ def waveletTransform(data, spatialResolution, wavelet):
 def findPeaks(power):
 
     # Find and return coordinates of local maximums
-    cutOff = 0.4  # Disregard maximums less than cutOff * imageMax
+    cutOff = 0.40  # Disregard maximums less than cutOff * imageMax
     margin = 10  # Disregard maximums less than margin from image border, must be pos integer
-    distance = 10  # Disregard maximums less than distance away from each other, must be pos integer
+    distance = 5  # Disregard maximums less than distance away from each other, must be pos integer
     # Finds local maxima based on distance, cutOff, margin
     peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
-
     return peaks  # Array of coordinate arrays
-
-# Older peak finding code is here
-# def findPeaks(power):
-#
-#     # Find and return coordinates of local maximums
-#     cutOff = 0.50  # Disregard maximums less than cutOff * imageMax
-#     margin = 10  # Disregard maximums less than margin from image border, must be pos integer
-#     distance = 25  # Disregard maximums less than distance away from each other, must be pos integer
-#     # Finds local maxima based on distance, cutOff, margin
-#     peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
-#
-#     return peaks  # Array of coordinate arrays
 
 def displayProgress(peaks, length):
 
@@ -453,109 +449,118 @@ def searchNearby(row, col, region, power, powerLimit, tol):
     for r in range(row-tol, row+tol+1):
         for c in range(col-tol, col+tol+1):
             try:
-                if not region[r,c] and powerLimit < power[r,c]:# <= power[row, col]+1:
+                if not region[r,c] and powerLimit < power[r,c] <= power[row, col]:
                     region[r,c] = True
                     region = searchNearby(r,c, region, power, powerLimit, tol)
             except IndexError:
                 pass
     return region
-
-def findPeakRegion(power, peak):
-    region = np.zeros(power.shape, dtype=bool)
-    region[peak[0], peak[1]] = True
-
-    powerLimit = 0.75 * power[peak[0], peak[1]]
-
-    tolerance = 2
-
-    try:
-        region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
-        region = binary_fill_holes(region)
-    except RecursionError:
-        try:
-            region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
-            region = binary_fill_holes(region)
-        except RecursionError:
-            pass
-
-    return region
-
-# Older region finding code is here
-# def searchPowerSurface(X, Y, row, col, rMod, cMod, power, powerLimit, initialCall):
-#     # This method needs hella comments, get to it eventually
-#     onEdge = False
-#     iRow = row
-#     iCol = col
-#     iRMod = rMod
-#     iCMod = cMod
-#     while power[row, col] > powerLimit:
-#         if (row == 0 or row == power.shape[0] - 1) and rMod is not 0:
-#             if onEdge:
-#                 return X, Y
-#             rMod = 0
-#             onEdge = True
-#             if cMod == 0:
-#                 if initialCall:
-#                     cMod = 1
-#                     X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
-#                 else:
-#                     cMod = -1
-#
-#         if (col == 0 or col == power.shape[1] - 1) and cMod is not 0:
-#             if onEdge:
-#                 return X, Y
-#
-#             cMod = 0
-#             onEdge = True
-#             if rMod == 0:
-#                 if initialCall:
-#                     rMod = 1
-#                     X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
-#                 else:
-#                     rMod = -1
-#         row += rMod
-#         col += cMod
-#
-#     Y.append([row])
-#     X.append([col])
-#     return X, Y
 #
 # def findPeakRegion(power, peak):
-#     # This method needs hella comments too, and cleaning up in the looks department
-#
-#     # Initialize regions to False
 #     region = np.zeros(power.shape, dtype=bool)
+#     region[peak[0], peak[1]] = True
+# #
+#     powerLimit = 0.75 * power[peak[0], peak[1]]
+# #
+#     tolerance = 2
+# #
+#     try:
+#         region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
+#         region = binary_fill_holes(region)
+#     except RecursionError:
+#         try:
+#             region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
+#             region = binary_fill_holes(region)
+#         except RecursionError:
+#             pass
+# #
+#     return region
+
+# Older region finding code is here
+def searchPowerSurface(X, Y, row, col, rMod, cMod, power, powerLimit, initialCall):
+    # This method needs hella comments, get to it eventually
+    onEdge = False
+    iRow = row
+    iCol = col
+    iRMod = rMod
+    iCMod = cMod
+    while power[row, col] > powerLimit:
+        if (row == 0 or row == power.shape[0] - 1) and rMod is not 0:
+            if onEdge:
+                return X, Y
+            rMod = 0
+            onEdge = True
+            if cMod == 0:
+                if initialCall:
+                    cMod = 1
+                    X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
+                else:
+                    cMod = -1
 #
-#     # Get peak coordinates
-#     r = peak[0]
-#     c = peak[1]
+        if (col == 0 or col == power.shape[1] - 1) and cMod is not 0:
+            if onEdge:
+                return X, Y
+#
+            cMod = 0
+            onEdge = True
+            if rMod == 0:
+                if initialCall:
+                    rMod = 1
+                    X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
+                else:
+                    rMod = -1
+        row += rMod
+        col += cMod
+#
+    Y.append([row])
+    X.append([col])
+    return X, Y
+
+# def findPeakRegion(power, peak):
+#     region = np.zeros(power.shape, dtype=bool)
+#     rows = 20
+#     cols = 150
+#
+#     region[(peak[0]-rows):(peak[0]+rows), (peak[1]-cols):(peak[1]+cols)] = True
+#
+#     return region
+
+def findPeakRegion(power, peak):
+    # This method needs hella comments too, and cleaning up in the looks department
+#
+    # Initialize regions to False
+    region = np.zeros(power.shape, dtype=bool)
+#
+    # Get peak coordinates
+    r = peak[0]
+    c = peak[1]
 #
 #
-#     powerLimit = 0.25  # Percentage of peak height to form lower barrier
-#     powerLimit = powerLimit * power[r, c]
+    powerLimit = 0.7  # Percentage of peak height to form lower barrier
+    powerLimit = powerLimit * power[r, c]
 #
-#     X, Y = ( [], [] )
+    X, Y = ( [], [] )
 #
-#     for rMod in [-1,0,1]:
-#         for cMod in [-1,0,1]:
-#             if (rMod is not 0) or (cMod is not 0):
-#                 X, Y = searchPowerSurface(X, Y, r, c, rMod, cMod, power, powerLimit, True)
+    for rMod in [-1,0,1]:
+        for cMod in [-1,0,1]:
+            if (rMod is not 0) or (cMod is not 0):
+                X, Y = searchPowerSurface(X, Y, r, c, rMod, cMod, power, powerLimit, True)
 #
-#     # Formulate and solve the least squares problem ||Ax - b ||^2
-#     A = np.hstack( (np.power(X,2), np.multiply(X, Y), np.power(Y,2), X, Y) )
-#     b = np.ones_like(X)
-#     x = np.linalg.lstsq(A, b, rcond=None)[0].squeeze()
+    # Formulate and solve the least squares problem ||Ax - b ||^2
+    A = np.hstack( (np.power(X,2), np.multiply(X, Y), np.power(Y,2), X, Y) )
+    b = np.ones_like(X)
+    x = np.linalg.lstsq(A, b, rcond=None)[0].squeeze()
 #
-#     if x[1] ** 2 - 4 * x[0] * x[2] >= 0:  # Fit is hyperbolic/parabolic, not elliptical
-#         region[r, c] = True  # Remove peak from list
-#         return region  # Didn't find anything
+    if x[1] ** 2 - 4 * x[0] * x[2] >= 0:  # Fit is hyperbolic/parabolic, not elliptical
+        region[r, c] = True  # Remove peak from list
+        return region  # Didn't find anything
 #
-#     X_coord, Y_coord = np.meshgrid(range(region.shape[1]), range(region.shape[0]))
-#     region = x[0] * X_coord ** 2 + x[1] * X_coord * Y_coord + x[2] * Y_coord ** 2 + x[3] * X_coord + x[4] * Y_coord
+    X_coord, Y_coord = np.meshgrid(range(region.shape[1]), range(region.shape[0]))
+    region = x[0] * X_coord ** 2 + x[1] * X_coord * Y_coord + x[2] * Y_coord ** 2 + x[3] * X_coord + x[4] * Y_coord
 #
-#     region = ( region.astype(int) > 0 )
+    region = ( region.astype(int) > 0 )
 #
-#     return region  # Boolean mask showing region surrounding peak
+    return region  # Boolean mask showing region surrounding peak
 
 def removePeaks(region, peaks):
     # Remove local maxima that have already been traced from peaks list
@@ -641,6 +646,14 @@ def getParameters(data, wave, spatialResolution, region):
     # Classic 2x2 rotation matrix
     rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
     uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
+
+    # Make hodograph plot, for debugging
+    plt.scatter(uTrim, vTrim, marker='*', color='r')
+    plt.scatter(uvComp[0], uvComp[1], marker='o', color='b')
+    #plt.xlim(-50,50)
+    #plt.ylim(-50,50)
+    plt.show()
+
     gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
     if np.angle(gamma) < 0:
         theta = theta + np.pi
@@ -697,7 +710,7 @@ def getParameters(data, wave, spatialResolution, region):
         'Date and Time [UTC]': timeOfDetection[0],
         'Vertical wavelength [km]': (2 * np.pi / m) / 1000,
         'Horizontal wavelength [km]': lambda_h / 1000,
-        'Angle of wave [deg]': theta,
+        'Angle of wave [deg]': theta * 180 / np.pi,
         'Axial ratio [no units]': axialRatio,
         'Intrinsic vertical group velocity [m/s]': intrinsicVerticalGroupVel,
         'Intrinsic horizontal group velocity [m/s]': intrinsicHorizGroupVel,

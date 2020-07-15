@@ -39,7 +39,7 @@ for file in os.listdir(dataSource):
     epsilon = 0.622  # epsilon, unitless constant
 
     # vapor pressure
-    e = 6.1121 * np.exp((18.678 - (data['T'] / 234.84)) * (data['T'] / (257.14 + data['T']))) * data['Hu']  # hPa
+    e = np.exp(1.8096 + (17.269425 * data['Dewp.']) / (237.3 + data['Dewp.']))  # hPa
 
     # water vapor mixing ratio
     rvv = np.divide( np.multiply( np.array(e), epsilon ), ( np.array(data['P']) - np.array(e) ) )  # unitless
@@ -48,7 +48,9 @@ for file in os.listdir(dataSource):
     pot = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
 
     # virtual potential temperature
-    vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
+    #vpt = pot * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
+    virtcon = 0.61
+    vpt = pot * (1 + (virtcon * rvv))
 
     # absolute virtual temperature
     #vt = (data['T'] + 273.15) * ((1 + (rvv / epsilon)) / (1 + rvv))  # kelvin
@@ -70,7 +72,7 @@ for file in os.listdir(dataSource):
     pblHeightMin = np.min(pbls)
     pblHeightMedian = np.median(pbls)  # Median is the best
 
-    print("Calculated PBL height of " + str(pblHeightMedian) + " meters above ground level.")
+    print("Calculated PBL height (min, median, max) of (" + str(pblHeightMin) + ", " + str(pblHeightMedian) + ", " + str(pblHeightMax) + ") meters above ground level.")
     print(fun.layerStability(hi, pot))  # Print the layer stability, while we're at it
 
     ##### Now write max PBL height to profile file
