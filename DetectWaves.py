@@ -1,6 +1,5 @@
 from WaveDetectionFunctions import getAllUserInput, cleanData, readFromData, interpolateData, drawPlots, waveletTransform, findPeaks, displayProgress, findPeakRegion, removePeaks, updatePlotter, invertWaveletTransform, getParameters
 import numpy as np
-import pywt
 import os
 import json
 import matplotlib.pyplot as plt
@@ -20,10 +19,15 @@ for file in os.listdir( userInput.get('dataSource') ):
         data = interpolateData( data, spatialResolution, pblHeight, launchDateTime )
         if not data.empty:
 
-            if userInput.get('showPlots'):
-                drawPlots( data['Alt'], data['T'], data['Dewp.'], pblHeight )
+            #if userInput.get('showPlots'):
+            #    drawPlots( data['Alt'], data['T'], data['Dewp.'], pblHeight )
+
             # Get the stuff... comment better later!
-            wavelets = waveletTransform( data, spatialResolution, 'cmor2-6')  # Use morlet wavelet
+            wavelets = waveletTransform( data, spatialResolution, 'MORLET')  # Use morlet wavelet
+
+            print(wavelets.get('wavelengths'))
+            print(wavelets.get('scales'))
+
             # Find local maximums in power surface
             peaks = findPeaks( wavelets.get('power') )
             numPeaks = len(peaks)  # To keep track of progress
@@ -32,7 +36,10 @@ for file in os.listdir( userInput.get('dataSource') ):
             # Numpy array for plotting purposes
             plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
 
-            waves = {'waves': {}}  # Empty dictionary, to contain wave characteristics
+            waves = {
+                'flight': {'time': np.array(data['Time']).tolist(), 'alt': np.array(data['Alt']).tolist()},  # Flight path for plotting results
+                'waves': {}  # Empty dictionary, to contain wave characteristics
+            }
             waveCount = 1  # For naming output waves
 
             # Iterate over local maximums to identify wave characteristics
@@ -55,21 +62,20 @@ for file in os.listdir( userInput.get('dataSource') ):
                 wave = invertWaveletTransform( region, wavelets )
                 # Get wave parameters
 
-                yScale = (2 * np.pi / pywt.scale2frequency('cmor2-6', wavelets.get('scales'))) / 1000
-
                 extents = [
                     data['Alt'][0] / 1000,
-                    data['Alt'][len(data['Alt']) - 1] / 1000,
-                    yScale[0],
-                    yScale[len(yScale) - 1]
+                    np.array(data['Alt'])[-1] / 1000,
+                    wavelets.get('wavelengths')[0] / 1000,
+                    wavelets.get('wavelengths')[-1] / 1000
                 ]
-                plt.figure()
+                #ax = plt.axes()
                 plt.imshow(wavelets.get('power'),
                            extent=extents)
-                plt.axes().set_aspect('auto')
+                #ax.set_aspect('auto')
                 cb = plt.colorbar()
-                plt.contour(data['Alt'] / 1000, np.flip(yScale), region,
-                            colors='red')
+                plt.contour(data['Alt']/1000, wavelets.get('wavelengths')/1000, region,
+                            colors='red', levels=[0.5])
+                #plt.yscale('log')
                 plt.xlabel("Altitude [km]")
                 plt.ylabel("Vertical Wavelength [km]")
                 plt.title("Power surface, including traced peaks")
@@ -92,7 +98,7 @@ for file in os.listdir( userInput.get('dataSource') ):
 
             # Also, build nice output plot
 
-            yScale = (2 * np.pi / pywt.scale2frequency('morl', wavelets.get('scales'))) / 1000
+            yScale = wavelets.get('wavelengths')
 
             extents = [
                 data['Alt'][0] / 1000,

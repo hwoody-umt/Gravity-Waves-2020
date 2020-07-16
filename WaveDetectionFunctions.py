@@ -6,7 +6,7 @@ import pandas as pd  # Convenient data formatting, and who doesn't want pandas
 from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import os  # File reading and input
 from io import StringIO  # Used to run strings through input/output functions
-import pywt  # Library PyWavelets, for wavelet transforms
+from TorrenceCompoWavelets import wavelet as continuousWaveletTransform  # Torrence & Compo (1998) wavelet analysis code
 from skimage.feature import peak_local_max  # Find local max
 from scipy.ndimage.morphology import binary_fill_holes  # Help surround local max
 import datetime  # Turning time into dates
@@ -192,6 +192,7 @@ def getUserInputTF(prompt):
     while not userInput:
         userInput = input()
         if lower(userInput) != "y" and lower(userInput) != "n":
+            print("Please enter a valid answer (Y/N):")
             userInput = ""
     if lower(userInput) == "y":
         return True
@@ -381,31 +382,26 @@ def waveletTransform(data, spatialResolution, wavelet):
     rMean = pd.Series(v).rolling(window=N, min_periods=500, center=True).mean()
     v = v - rMean
 
-    # List of wavelet scales to iterate over
-    scales = np.arange(100, 100000, 200)  # Below scales are broken, this needs to be figured out.
-    # Scales based on Zink and Vincent, Figure 1c
-    #scales = np.arange(0, 4, 1 / 100)
-    #scales = 100 * 10**(scales)
+    # In preperation for wavelet transformation, define variables
+    # From Torrence & Compo (1998)
+    padding = 1  # Pad the data with zeros to allow convolution to edge of data
+    scaleResolution = 1/1000  # This is a scale thingamobober
+    smallestScale = 100  # This number is the smallest wavelet scale
+    #j1 = 10/dj  # This number is how many scales to compute
 
     # Lay groundwork for inversions, outside of local max. loop
-    # Derived from Torrence & Compo, 1998, Equations 11, 12, & 13 and Table 1
-    k = np.arange(1, len(scales) - 1)
-    frequencies = 2 * np.pi * k / (len(scales) * spatialResolution)
-    frequencies[k > len(scales) / 2] = -frequencies[k > len(scales) / 2]
-    deltaWavelet = np.zeros(len(scales))
-    for n in range(len(deltaWavelet)):
-        for w in frequencies:
-            deltaWavelet[n] += np.exp(-(scales[n] * w - 6) ** 2 / 2)
-    deltaWavelet = deltaWavelet / (len(scales) * np.pi ** 0.25)
-    reconstructionConstant = 1 / np.divide(deltaWavelet, np.sqrt(scales)).sum()
+    # Derived from Torrence & Compo, 1998, Equation 11 and Table 2
+    constant = scaleResolution * np.sqrt(spatialResolution) / (0.776 * np.pi**0.25)
 
     # Now, do the actual wavelet transform
     print("Performing wavelet transform on U... (1/3)", end='')  # Console output, to be updated
-    (coefU, freq) = pywt.cwt(u, scales, wavelet, spatialResolution)  # Continuous morlet wavelet transform
-    print("\b\b\b\b\b\b\b\b\b\bV... (2/3)", end='')  # Update to keep user from getting too bored
-    (coefV, freq) = pywt.cwt(v, scales, wavelet, spatialResolution)
-    print("\b\b\b\b\b\b\b\b\b\bT... (3/3)")  # Final command line update for wavelet analysis
-    (coefT, freq) = pywt.cwt(data['T'], scales, wavelet, spatialResolution)
+    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    print("\rPerforming wavelet transform on V... (2/3)", end='')  # Update to keep user informed
+    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+
+    print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console update for wavelet transform
+    coefT, periods, scales, coi = continuousWaveletTransform(data['T'], spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+
 
     # Power surface is sum of squares of u and v wavelet transformed surfaces
     power = abs(coefU) ** 2 + abs(coefV) ** 2  # abs() gets magnitude of complex number
@@ -422,15 +418,16 @@ def waveletTransform(data, spatialResolution, wavelet):
         'coefV': coefV,
         'coefT': coefT,
         'scales': scales,
-        'constant': reconstructionConstant
+        'wavelengths': periods,
+        'constant': constant
     }
-
-    #np.save("wavelets.npy", results)
-    #data.to_csv("dataex.csv", index=False)
 
     return results  # Dictionary of wavelet-transformed surfaces
 
 def findPeaks(power):
+
+    # UI console output to keep user informed
+    print("\nSearching for local maximums in power surface", end='')
 
     # Find and return coordinates of local maximums
     cutOff = 0.40  # Disregard maximums less than cutOff * imageMax
@@ -438,12 +435,15 @@ def findPeaks(power):
     distance = 5  # Disregard maximums less than distance away from each other, must be pos integer
     # Finds local maxima based on distance, cutOff, margin
     peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
+
+    print()  # Newline for next console output
+
     return peaks  # Array of coordinate arrays
 
 def displayProgress(peaks, length):
 
     # Console output to keep user from getting too bored
-    print("\rTracing and analyzing peak " + str(length - len(peaks)) + "/" + str(length), end='')
+    print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
 
 def searchNearby(row, col, region, power, powerLimit, tol):
     for r in range(row-tol, row+tol+1):
@@ -610,7 +610,7 @@ def getParameters(data, wave, spatialResolution, region):
     # Find wind variance, why? I don't know.
     windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2  # What is this, why do we care?
 
-    # Why do we do this? I have no idea...
+    # Get rid of values below half-power, per Murphy
     uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
@@ -648,25 +648,21 @@ def getParameters(data, wave, spatialResolution, region):
     uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
 
     # Make hodograph plot, for debugging
-    plt.scatter(uTrim, vTrim, marker='*', color='r')
-    plt.scatter(uvComp[0], uvComp[1], marker='o', color='b')
-    #plt.xlim(-50,50)
-    #plt.ylim(-50,50)
+    plt.scatter(uTrim, vTrim, marker='o', color='b')
+    plt.xlabel('U')
+    plt.ylabel('V')
+    plt.title('Hodograph of Traced Peak')
     plt.show()
 
     gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
     if np.angle(gamma) < 0:
         theta = theta + np.pi
-    coriolisF = 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi)
+    coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
     intrinsicF = coriolisF * axialRatio
     bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared???
     bvMean = np.mean(np.array(bvF2)[np.nonzero([sum(x) for x in region.T])])  # Mean of bvF2 across region
 
-    if not np.sqrt(bvMean) > np.abs(intrinsicF) > np.abs(coriolisF):
-        # print("\nTriple shit")
-        # print(np.sqrt(bvMean))
-        # print(intrinsicF)
-        # print(coriolisF)
+    if not np.sqrt(bvMean) > intrinsicF > coriolisF:
         return {}
 
     # Vertical wavenumber [1/m]
