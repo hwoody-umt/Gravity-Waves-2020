@@ -10,122 +10,132 @@ import matplotlib.pyplot as plt
 # First, get applicable user input.
 userInput = getAllUserInput()
 # Then, iterate over files in data directory
-for file in os.listdir( userInput.get('dataSource') ):
+for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get('dataSource') ):
     # Import and clean the data, given the file path
     data = cleanData( file, userInput.get('dataSource') )
-    if not data.empty:
-        launchDateTime, pblHeight = readFromData( file, userInput.get('dataSource'))
-        spatialResolution = 5  # meters in between uniformly distributed data points, must be pos integer
-        data = interpolateData( data, spatialResolution, pblHeight, launchDateTime )
-        if not data.empty:
 
-            #if userInput.get('showPlots'):
-            #    drawPlots( data['Alt'], data['T'], data['Dewp.'], pblHeight )
+    # If nothing was returned, file is not recognized as a GRAWMET profile,
+    # so skip ahead to the next loop iteration
+    if data.empty:
+        continue
 
-            # Get the stuff... comment better later!
-            wavelets = waveletTransform( data, spatialResolution, 'MORLET')  # Use morlet wavelet
+    launchDateTime, pblHeight = readFromData( file, userInput.get('dataSource'))
+    spatialResolution = 4  # meters in between uniformly distributed data points, must be pos integer
+    data = interpolateData( data, spatialResolution, pblHeight, launchDateTime )
 
-            print(wavelets.get('wavelengths'))
-            print(wavelets.get('scales'))
+    # If nothing was returned, file was missing too much data,
+    # so skip ahead to the next loop iteration
+    if data.empty:
+        continue
 
-            # Find local maximums in power surface
-            peaks = findPeaks( wavelets.get('power') )
-            numPeaks = len(peaks)  # To keep track of progress
-            peaksToPlot = peaks.copy()  # Keep peaks for plot at end
+    # Get the stuff... comment better later!
+    wavelets = waveletTransform( data, spatialResolution, 'MORLET')  # Use morlet wavelet
 
-            # Numpy array for plotting purposes
-            plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
+    # For current debugging, remove when plotting is fixed
+    #print("Wavelengths run from " + str(wavelets.get('wavelengths')[0]/1000) + " to " + str(wavelets.get('wavelengths')[-1]/1000) + " kilometers.")
 
-            waves = {
-                'flight': {'time': np.array(data['Time']).tolist(), 'alt': np.array(data['Alt']).tolist()},  # Flight path for plotting results
-                'waves': {}  # Empty dictionary, to contain wave characteristics
-            }
-            waveCount = 1  # For naming output waves
+    # Find local maximums in power surface
+    peaks = findPeaks( wavelets.get('power') )
+    numPeaks = len(peaks)  # To keep track of progress
+    peaksToPlot = peaks.copy()  # Keep peaks for plot at end
 
-            # Iterate over local maximums to identify wave characteristics
-            while len(peaks) > 0:
-                # Output progress to console and increment counter
-                displayProgress( peaks, numPeaks )
-                # Identify the region surrounding the peak
-                region = findPeakRegion( wavelets.get('power'), peaks[0] )
+    # Numpy array for plotting purposes
+    plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
 
-                # Update list of peaks that have yet to be analyzed
-                peaks = removePeaks( region, peaks )
+    waves = {
+        'waves': {},  # Empty dictionary, to contain wave characteristics
+        'flightPath': {'time': np.array(data['Time']).tolist(), 'alt': np.array(data['Alt']).tolist()}  # Flight path for plotting results
+    }
+    waveCount = 1  # For naming output waves
 
-                if region.sum().sum() <= 1:  # Only found the peak, not the region
-                    continue  # Don't bother analyzing the single cell
+    # Iterate over local maximums to identify wave characteristics
+    while len(peaks) > 0:
+        # Output progress to console and increment counter
+        displayProgress( peaks, numPeaks )
+        # Identify the region surrounding the peak
+        region = findPeakRegion( wavelets.get('power'), peaks[0] )
 
-                # Update plotting mask
-                plotter = updatePlotter( region, plotter )
+        # Update list of peaks that have yet to be analyzed
+        peaks = removePeaks( region, peaks )
 
-                # Get inverted regional maximums
-                wave = invertWaveletTransform( region, wavelets )
-                # Get wave parameters
+        if region.sum().sum() <= 1:  # Only found the peak, not the region
+            continue  # Don't bother analyzing the single cell
 
-                extents = [
-                    data['Alt'][0] / 1000,
-                    np.array(data['Alt'])[-1] / 1000,
-                    wavelets.get('wavelengths')[0] / 1000,
-                    wavelets.get('wavelengths')[-1] / 1000
-                ]
-                #ax = plt.axes()
-                plt.imshow(wavelets.get('power'),
-                           extent=extents)
-                #ax.set_aspect('auto')
-                cb = plt.colorbar()
-                plt.contour(data['Alt']/1000, wavelets.get('wavelengths')/1000, region,
-                            colors='red', levels=[0.5])
-                #plt.yscale('log')
-                plt.xlabel("Altitude [km]")
-                plt.ylabel("Vertical Wavelength [km]")
-                plt.title("Power surface, including traced peaks")
-                cb.set_label("Power [m^2/s^2]")
-                plt.show()
+        # Update plotting mask
+        plotter = updatePlotter( region, plotter )
 
-                parameters = getParameters( data, wave, spatialResolution, region )
-                # If found, save parameters to dictionary of waves
-                if parameters:
-                    name = 'wave' + str(waveCount)
-                    waves['waves'][name] = parameters
-                    waveCount += 1
+        # Get inverted regional maximums
+        wave = invertWaveletTransform( region, wavelets )
+        # Get wave parameters
 
-            # Save waves data here, if saveData boolean is true
-            print(waves)
-            if userInput.get('saveData'):
-                # Save waves data here, if saveData boolean is true
-                with open(userInput.get('savePath') + "/" + file[0:-4] + '_wave_parameters.json', 'w') as writeFile:
-                    json.dump(waves, writeFile, indent=4, default=str)
+        #extents = [
+        #    data['Alt'][0] / 1000,
+        #    np.array(data['Alt'])[-1] / 1000,
+        #    wavelets.get('wavelengths')[0] / 1000,
+        #    wavelets.get('wavelengths')[-1] / 1000
+        #]
+        #ax = plt.axes()
+        #plt.imshow(wavelets.get('power'))#,
+        #           extent=extents)
+        #ax.set_aspect('auto')
+        #cb = plt.colorbar()
+        #plt.scatter(peaksToPlot[0], peaksToPlot[1], colors='red', marker='o')
+        #plt.contour(data['Alt']/1000, wavelets.get('wavelengths')/1000, region,
+        #            colors='red', levels=[0.5])
+        #plt.contour(region, colors='red', levels=[0.5])
+        #plt.yscale('log')
+        #plt.xlabel("Altitude [km]")
+        #plt.ylabel("Vertical Wavelength [km]")
+        #plt.title("Power surface, including traced peaks")
+        #cb.set_label("Power [m^2/s^2]")
+        #plt.show()
 
-            # Also, build nice output plot
+        # Perform analysis to find wave information
+        parameters = getParameters( data, wave, spatialResolution, region )
+        # If found, save parameters to dictionary of waves
+        if parameters:
+            name = 'wave' + str(waveCount)
+            waves['waves'][name] = parameters
+            waveCount += 1
 
-            yScale = wavelets.get('wavelengths')
+    # Save waves data here, if saveData boolean is true
+    if userInput.get('saveData'):
+        # Save waves data here, if saveData boolean is true
+        with open(userInput.get('savePath') + "/" + file[0:-4] + '_wave_parameters.json', 'w') as writeFile:
+            json.dump(waves, writeFile, indent=4, default=str)
 
-            extents = [
-                data['Alt'][0] / 1000,
-                data['Alt'][len(data['Alt']) - 1] / 1000,
-                yScale[0],
-                yScale[len(yScale) - 1]
-            ]
-            plt.figure()
-            plt.imshow(wavelets.get('power'),
-                       extent=extents)
-            plt.axes().set_aspect('auto')
-            cb = plt.colorbar()
-            plt.contour(data['Alt'] / 1000, np.flip(yScale), plotter,
-                        colors='red')
-            plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, np.flip(yScale)[peaksToPlot.T[0]], marker='.',
-                        edgecolors='red')
-            plt.xlabel("Altitude [km]")
-            plt.ylabel("Vertical Wavelength [km]")
-            plt.title("Power surface, including traced peaks")
-            cb.set_label("Power [m^2/s^2]")
+    # Also, build nice output plot
 
-            if userInput.get('saveData'):
-                plt.savefig(userInput.get('savePath') + "/" + file[0:-4] + "_power_surface.png")
-            if userInput.get('showPlots'):
-                plt.show()
-            plt.close()
-            print("Finished analysis.")
+    #yScale = wavelets.get('wavelengths')
+
+    #extents = [
+    #    data['Alt'][0] / 1000,
+    #    data['Alt'][len(data['Alt']) - 1] / 1000,
+    #    yScale[0],
+    #    yScale[len(yScale) - 1]
+    #]
+    ax = plt.axes()
+    plt.imshow(wavelets.get('power'))#,
+    #extent=extents)
+    ax.set_aspect('auto')
+    cb = plt.colorbar()
+    #plt.contour(data['Alt'] / 1000, np.flip(yScale), plotter,
+    #            colors='red')
+    #plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, np.flip(yScale)[peaksToPlot.T[0]], marker='.',
+    #            edgecolors='red')
+    plt.scatter(peaksToPlot[0], peaksToPlot[1], edgecolors='red', marker='o')
+    plt.contour(region, colors='red', levels=[0.5])
+    plt.xlabel("Altitude [index]")
+    plt.ylabel("Vertical Wavelength [index]")
+    plt.title("Power surface, including traced peaks")
+    cb.set_label("Power [m^2/s^2]")
+
+    if userInput.get('saveData'):
+        plt.savefig(userInput.get('savePath') + "/" + file[0:-4] + "_power_surface.png")
+    if userInput.get('showPlots'):
+        plt.show()
+    plt.close()
+    print("\nFinished file analysis")
 
 ########## FINISHED ANALYSIS ##########
 print("\nAnalyzed all files in folder "+userInput.get('dataSource')+"/")

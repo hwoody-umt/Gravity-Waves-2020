@@ -5,7 +5,8 @@ import json
 from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import matplotlib.dates as mdates
 import datetime
-import pandas
+import matplotlib.lines as mlines
+import matplotlib.markers as mmarkers
 
 
 def getUserInputFile(prompt):
@@ -67,6 +68,8 @@ plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
 
 print(os.listdir( userInput.get('dataSource') ))
 
+quiverLegendHandle = 0
+
 for file in os.listdir( userInput.get('dataSource') ):
     if not file.endswith(".json"):
         continue
@@ -79,6 +82,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         with open(os.path.join(userInput.get('dataSource'), file)) as json_file:
             data = json.load(json_file)
             waves = data.get('waves')
+            flightPath = data.get('flight')
     except:
         print("JSON file does not contain wave data")
         continue
@@ -103,10 +107,22 @@ for file in os.listdir( userInput.get('dataSource') ):
     X = [datetime.datetime.strptime(date.split('.', 1)[0], '%Y-%m-%d %H:%M:%S') for date in X]
 
     plt.quiver(X, Y, U, V, color='red')
-    Y = [Y for (X, Y) in sorted(zip(X, Y)) ]
-    X = sorted(X)
+
+    X = flightPath.get('time')
+    X = [datetime.datetime.strptime(date.split('.', 1)[0], '%Y-%m-%d %H:%M:%S') for date in X]
+
+    Y = flightPath.get('alt')
+    Y = np.array(Y) / 1000  # convert to km
+
     plt.plot( X, Y, color='blue')
-plt.xlabel("Date and Time [UTC]")
+
+
+blue_line = mlines.Line2D([], [], color='blue', label='Radiosonde flight')
+red_arrow = mlines.Line2D([], [], color='w', marker=r'$\rightarrow$', markeredgecolor='red', markerfacecolor='red', markersize=15, label='Gravity Wave')
+plt.legend(handles=[blue_line, red_arrow])
+
+plt.title("Week 2 Launch 1 Radiosonde Flight")
+plt.xlabel("Time [UTC]")
 plt.ylabel("Altitude [km]")
 plt.show()
 

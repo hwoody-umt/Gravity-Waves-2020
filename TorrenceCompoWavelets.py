@@ -92,7 +92,7 @@ __author__ = 'Evgeniya Predybaylo'
 #        at that particular time.
 #        Periods greater than this are subject to edge effects.
 
-def wavelet(Y, dt, pad=0, dj=-1, s0=-1, J1=-1, mother=-1, param=-1):
+def wavelet(Y, dt, pad=False, dj=-1, s0=-1, J1=-1, mother=-1, param=-1):
     n1 = len(Y)
 
     if s0 == -1:
@@ -106,7 +106,7 @@ def wavelet(Y, dt, pad=0, dj=-1, s0=-1, J1=-1, mother=-1, param=-1):
 
     #....construct time series to analyze, pad if necessary
     x = Y - np.mean(Y)
-    if pad == 1:
+    if pad:
         base2 = np.fix(np.log(n1) / np.log(2) + 0.4999)  # power of 2 nearest to N
         x = np.concatenate((x, np.zeros((2 ** (base2 + 1) - n1).astype(np.int64))))
 

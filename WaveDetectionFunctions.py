@@ -2,14 +2,16 @@
 
 import numpy as np  # Numbers (like pi) and math
 import matplotlib.pyplot as plt  # Easy plotting
+import matplotlib.path as path  # Used for finding the peak region
 import pandas as pd  # Convenient data formatting, and who doesn't want pandas
 from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import os  # File reading and input
 from io import StringIO  # Used to run strings through input/output functions
 from TorrenceCompoWavelets import wavelet as continuousWaveletTransform  # Torrence & Compo (1998) wavelet analysis code
 from skimage.feature import peak_local_max  # Find local max
-from scipy.ndimage.morphology import binary_fill_holes  # Help surround local max
 import datetime  # Turning time into dates
+from skimage.measure import find_contours  # Find contour levels around local max
+from scipy.ndimage.morphology import binary_fill_holes  # Then fill in those contour levels
 
 ########## PBL AND STABILITY CALCULATIONS ##########
 
@@ -242,7 +244,6 @@ def getAllUserInput():
 def cleanData(file, path):
     # If file is not a txt file, end now
     if not file.endswith(".txt"):
-        print("\nFile "+file+" is not a text file, ending analysis.")
         return pd.DataFrame()  # Empty data frame means end analysis
 
 
@@ -300,6 +301,10 @@ def cleanData(file, path):
         print("Dropping "+str(len(badRows))+" rows containing unusable data")
         data = data.drop(data.index[badRows])  # Actually remove any necessary rows
     data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
+
+    # Get rid of extraneous columns that won't be used for further analysis
+    essentialData = ['Time', 'Alt', 'T', 'P', 'Ws', 'Wd', 'Lat.', 'Long.']
+    data = data[essentialData]
 
     return data  # return cleaned pandas data frame
 
@@ -385,7 +390,7 @@ def waveletTransform(data, spatialResolution, wavelet):
     # In preperation for wavelet transformation, define variables
     # From Torrence & Compo (1998)
     padding = 1  # Pad the data with zeros to allow convolution to edge of data
-    scaleResolution = 1/1000  # This is a scale thingamobober
+    scaleResolution = 1/1500  # This is a scale thingamobober
     smallestScale = 100  # This number is the smallest wavelet scale
     #j1 = 10/dj  # This number is how many scales to compute
 
@@ -398,7 +403,6 @@ def waveletTransform(data, spatialResolution, wavelet):
     coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
     print("\rPerforming wavelet transform on V... (2/3)", end='')  # Update to keep user informed
     coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
-
     print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console update for wavelet transform
     coefT, periods, scales, coi = continuousWaveletTransform(data['T'], spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
 
@@ -427,12 +431,12 @@ def waveletTransform(data, spatialResolution, wavelet):
 def findPeaks(power):
 
     # UI console output to keep user informed
-    print("\nSearching for local maximums in power surface", end='')
+    print("\nSearching for local maxima in power surface", end='')
 
     # Find and return coordinates of local maximums
-    cutOff = 0.40  # Disregard maximums less than cutOff * imageMax
+    cutOff = 0.25  # Disregard maximums less than cutOff * imageMax
     margin = 10  # Disregard maximums less than margin from image border, must be pos integer
-    distance = 5  # Disregard maximums less than distance away from each other, must be pos integer
+    distance = 1  # Disregard maximums less than distance away from each other, must be pos integer
     # Finds local maxima based on distance, cutOff, margin
     peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
 
@@ -526,41 +530,34 @@ def searchPowerSurface(X, Y, row, col, rMod, cMod, power, powerLimit, initialCal
 #     return region
 
 def findPeakRegion(power, peak):
-    # This method needs hella comments too, and cleaning up in the looks department
-#
-    # Initialize regions to False
+    # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
-#
-    # Get peak coordinates
-    r = peak[0]
-    c = peak[1]
-#
-#
-    powerLimit = 0.7  # Percentage of peak height to form lower barrier
-    powerLimit = powerLimit * power[r, c]
-#
-    X, Y = ( [], [] )
-#
-    for rMod in [-1,0,1]:
-        for cMod in [-1,0,1]:
-            if (rMod is not 0) or (cMod is not 0):
-                X, Y = searchPowerSurface(X, Y, r, c, rMod, cMod, power, powerLimit, True)
-#
-    # Formulate and solve the least squares problem ||Ax - b ||^2
-    A = np.hstack( (np.power(X,2), np.multiply(X, Y), np.power(Y,2), X, Y) )
-    b = np.ones_like(X)
-    x = np.linalg.lstsq(A, b, rcond=None)[0].squeeze()
-#
-    if x[1] ** 2 - 4 * x[0] * x[2] >= 0:  # Fit is hyperbolic/parabolic, not elliptical
-        region[r, c] = True  # Remove peak from list
-        return region  # Didn't find anything
-#
-    X_coord, Y_coord = np.meshgrid(range(region.shape[1]), range(region.shape[0]))
-    region = x[0] * X_coord ** 2 + x[1] * X_coord * Y_coord + x[2] * Y_coord ** 2 + x[3] * X_coord + x[4] * Y_coord
-#
-    region = ( region.astype(int) > 0 )
-#
-    return region  # Boolean mask showing region surrounding peak
+
+    # Find cut-off power level, based on height of peak
+    relativePowerLevel = 0.5  # Empirically determined parameter, to be adjusted
+    absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
+    # Find all the contours at cut-off level
+    contours = find_contours(power, absolutePowerLevel)
+
+    # Loop through contours to find the one surrounding the peak
+    for contour in contours:
+        # Use matplotlib.path.Path to create a path
+        p = path.Path(contour)
+        # Check to see if the peak is inside the closed loop of the contour path
+        if p.contains_points([[peak[0], peak[1]]]):
+            # If it is, set the boundary path to True
+            region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
+            # Then fill in the contour to create mask surrounding peak
+            region = binary_fill_holes(region)
+            # The method is now done, so return region
+            return region
+
+    # If for some reason the method couldn't isolate a region surrounding the peak,
+    # set the peak itself to True so that it will be removed from list of peaks
+    region[peak[0], peak[1]] = True
+    # And return the almost empty mask
+    return region
+
 
 def removePeaks(region, peaks):
     # Remove local maxima that have already been traced from peaks list
@@ -582,46 +579,56 @@ def invertWaveletTransform(region, wavelets):
     # Invert the wavelet transform in traced region
 
     uTrim = wavelets.get('coefU').copy()
-    #print("Nonzero elements of U: " + str(np.count_nonzero(uTrim)))
     uTrim[np.invert(region)] = 0  # Trim U based on region
-    #print("Nonzero elements of U: " + str(np.count_nonzero(uTrim)))
-    # Sum across columns of U, then multiply by mysterious constant
-    uTrim = np.multiply([sum(x) for x in uTrim.T.tolist()], wavelets.get('constant'))
-    #print("Nonzero elements of U: " + str(np.count_nonzero(uTrim)))
+    # Sum across columns of U, then multiply by constant
+    uTrim = np.multiply(uTrim.sum(axis=0), wavelets.get('constant'))
+
     # Do the same with V
     vTrim = wavelets.get('coefV').copy()
     vTrim[np.invert(region)] = 0
-    vTrim = np.multiply( [ sum(x) for x in vTrim.T.tolist() ], wavelets.get('constant') )
+    vTrim = np.multiply( vTrim.sum(axis=0), wavelets.get('constant') )
+
     # Again with T
     tTrim = wavelets.get('coefT').copy()
     tTrim[np.invert(region)] = 0
-    tTrim = np.multiply( [ sum(x) for x in tTrim.T.tolist() ], wavelets.get('constant') )
+    tTrim = np.multiply( tTrim.sum(axis=0), wavelets.get('constant') )
 
+    # Declare results in dictionary
     results = {
         'uTrim': uTrim,
         'vTrim': vTrim,
-        'tTrim': tTrim,
-        'scales': wavelets.get('scales')
+        'tTrim': tTrim
     }
+
+    # Add wavelengths (filtered according to region) for use in later analysis
+    results.update({'wavelengths': wavelets.get('wavelengths')[np.nonzero(region.sum(axis=1))]})
 
     return results  # Dictionary of trimmed inverted U, V, and T
 
 def getParameters(data, wave, spatialResolution, region):
-    # Find wind variance, why? I don't know.
-    windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2  # What is this, why do we care?
+
+    # Get index across the altitudes of the wave, for use later
+    waveAlts = np.nonzero(region.sum(axis=0))
+
+    # Calculate the wind variance of the wave
+    windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2
 
     # Get rid of values below half-power, per Murphy
     uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
 
+    # Get rid of unneeded variables, to save memory and improve performance
+    wavelengths = wave.get('wavelengths')
+    del windVariance
+    del wave
+
     # Seperate imaginary/real parts
-    vHilbert = vTrim.imag
-    uvComp = [uTrim, vTrim]
+    vHilbert = vTrim.copy().imag
+    uvComp = [uTrim.copy(), vTrim.copy()]
     uTrim = uTrim.real
     vTrim = vTrim.real
 
-    # I'll figure out where to put this later
     # Potential temperature
     pt = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
 
@@ -634,10 +641,6 @@ def getParameters(data, wave, spatialResolution, region):
 
     # Tests, I need to figure out why these make sense
     if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
-        # print("\nShit it's bad.")
-        # print(np.abs(P))
-        # print(np.abs(Q))
-        # print(degPolar)
         return {}
 
     theta = 0.5 * np.arctan2(P, D)  # What the hell?
@@ -648,25 +651,27 @@ def getParameters(data, wave, spatialResolution, region):
     uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
 
     # Make hodograph plot, for debugging
-    plt.scatter(uTrim, vTrim, marker='o', color='b')
-    plt.xlabel('U')
-    plt.ylabel('V')
-    plt.title('Hodograph of Traced Peak')
-    plt.show()
+    #plt.scatter(uTrim, vTrim, marker='o', color='b')
+    #plt.xlabel('U')
+    #plt.ylabel('V')
+    #plt.title('Hodograph of Traced Peak')
+    #plt.show()
 
     gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
     if np.angle(gamma) < 0:
         theta = theta + np.pi
+
     coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
     intrinsicF = coriolisF * axialRatio
+
     bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared???
-    bvMean = np.mean(np.array(bvF2)[np.nonzero([sum(x) for x in region.T])])  # Mean of bvF2 across region
+    bvMean = np.mean(np.array(bvF2)[waveAlts])  # Mean of bvF2 across region
 
     if not np.sqrt(bvMean) > intrinsicF > coriolisF:
         return {}
 
     # Vertical wavenumber [1/m]
-    m = 2 * np.pi / np.mean(np.array(1.03 * wave.get('scales'))[np.nonzero([sum(x) for x in region])])
+    m = 2 * np.pi / np.mean(wavelengths)
     # Horizontal wavenumber [1/m]
     kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvMean) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
     # I don't really know [m/s]
@@ -685,10 +690,10 @@ def getParameters(data, wave, spatialResolution, region):
     intrinsicMeridionalGroupVel = kh * np.cos(theta) * bvMean / (intrinsicF * m ** 2)
     # Same [m/s]
     intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel ** 2 + intrinsicMeridionalGroupVel ** 2)
-    # Horizontal wavelength? [m]
+    # Horizontal wavelength [m]
     lambda_h = 2 * np.pi / kh
     # Just average altitude of wave [m]
-    altitudeOfDetection = np.mean(np.array(data['Alt'])[np.nonzero([sum(x) for x in region.T])])
+    altitudeOfDetection = np.mean(np.array(data['Alt'])[waveAlts])
     # Get index of mean altitude
     detectionIndex = [np.min(np.abs(data['Alt'] - altitudeOfDetection)) == np.abs(data['Alt'] - altitudeOfDetection)]
     # Get latitude at index
@@ -712,8 +717,8 @@ def getParameters(data, wave, spatialResolution, region):
         'Intrinsic horizontal group velocity [m/s]': intrinsicHorizGroupVel,
         'Intrinsic vertical phase speed [m/s]': intrinsicVerticalPhaseSpeed,
         'Intrinsic horizontal phase speed [m/s]': intrinsicHorizPhaseSpeed,
-        'Degree of Polarization [WHAT IS THIS???]': degPolar,
-        'Mysterious parameter Q [who knows]': Q
+        'Degree of Polarization [no units]': degPolar,
+        'Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]': Q
     }
 
     return waveProp  # Dictionary of wave characteristics
