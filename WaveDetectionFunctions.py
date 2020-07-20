@@ -445,89 +445,9 @@ def findPeaks(power):
     return peaks  # Array of coordinate arrays
 
 def displayProgress(peaks, length):
-
-    # Console output to keep user from getting too bored
+    # Console output to keep user up to date
     print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
 
-def searchNearby(row, col, region, power, powerLimit, tol):
-    for r in range(row-tol, row+tol+1):
-        for c in range(col-tol, col+tol+1):
-            try:
-                if not region[r,c] and powerLimit < power[r,c] <= power[row, col]:
-                    region[r,c] = True
-                    region = searchNearby(r,c, region, power, powerLimit, tol)
-            except IndexError:
-                pass
-    return region
-#
-# def findPeakRegion(power, peak):
-#     region = np.zeros(power.shape, dtype=bool)
-#     region[peak[0], peak[1]] = True
-# #
-#     powerLimit = 0.75 * power[peak[0], peak[1]]
-# #
-#     tolerance = 2
-# #
-#     try:
-#         region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
-#         region = binary_fill_holes(region)
-#     except RecursionError:
-#         try:
-#             region = searchNearby(peak[0], peak[1], region, power, powerLimit, tolerance)
-#             region = binary_fill_holes(region)
-#         except RecursionError:
-#             pass
-# #
-#     return region
-
-# Older region finding code is here
-def searchPowerSurface(X, Y, row, col, rMod, cMod, power, powerLimit, initialCall):
-    # This method needs hella comments, get to it eventually
-    onEdge = False
-    iRow = row
-    iCol = col
-    iRMod = rMod
-    iCMod = cMod
-    while power[row, col] > powerLimit:
-        if (row == 0 or row == power.shape[0] - 1) and rMod is not 0:
-            if onEdge:
-                return X, Y
-            rMod = 0
-            onEdge = True
-            if cMod == 0:
-                if initialCall:
-                    cMod = 1
-                    X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
-                else:
-                    cMod = -1
-#
-        if (col == 0 or col == power.shape[1] - 1) and cMod is not 0:
-            if onEdge:
-                return X, Y
-#
-            cMod = 0
-            onEdge = True
-            if rMod == 0:
-                if initialCall:
-                    rMod = 1
-                    X, Y = searchPowerSurface(X, Y, iRow, iCol, iRMod, iCMod, power, powerLimit, False)
-                else:
-                    rMod = -1
-        row += rMod
-        col += cMod
-#
-    Y.append([row])
-    X.append([col])
-    return X, Y
-
-# def findPeakRegion(power, peak):
-#     region = np.zeros(power.shape, dtype=bool)
-#     rows = 20
-#     cols = 150
-#
-#     region[(peak[0]-rows):(peak[0]+rows), (peak[1]-cols):(peak[1]+cols)] = True
-#
-#     return region
 
 def findPeakRegion(power, peak):
     # Create boolean mask, initialized as False
@@ -545,10 +465,34 @@ def findPeakRegion(power, peak):
         p = path.Path(contour)
         # Check to see if the peak is inside the closed loop of the contour path
         if p.contains_points([[peak[0], peak[1]]]):
+
+            # If contour is not closed (includes an edge), close it manually
+            if not (contour[0,:] == contour[-1,:]).all():  # Doesn't end where it starts, must be open
+                print(contour[0,:])
+                print(contour[-1,:])
+                print()
+                print(np.arange(int(contour[-1, 0]), int(contour[0, 0])+1))
+                print(np.arange(int(contour[-1, 1]), int(contour[0, 1])+1))
+                # Get all points in between ends of contour
+                index = [[x, y] for x in np.arange(int(contour[-1, 0]), int(contour[0, 0])+1) for y in
+                         np.arange(int(contour[-1, 1]), int(contour[0, 1])+1)]
+                print(index)
+                print()
+                print(contour)
+                # Add all points onto the end of contour
+                contour = np.append(contour, index)
+                print()
+                print(contour)
+
             # If it is, set the boundary path to True
             region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
+
             # Then fill in the contour to create mask surrounding peak
             region = binary_fill_holes(region)
+
+            plt.imshow(region)
+            plt.show()
+
             # The method is now done, so return region
             return region
 

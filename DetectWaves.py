@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 # First, get applicable user input.
 userInput = getAllUserInput()
+
 # Then, iterate over files in data directory
 for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get('dataSource') ):
     # Import and clean the data, given the file path
