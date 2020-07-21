@@ -57,6 +57,9 @@ for file in os.listdir( userInput.get('dataSource') ):
         # Identify the region surrounding the peak
         region = findPeakRegion( wavelets.get('power'), peaks[0], plotter )
 
+        #Save for plotting
+        currentPeak = peaks[0]
+
         # Update list of peaks that have yet to be analyzed
         peaks = removePeaks( region, peaks )
 
@@ -76,7 +79,7 @@ for file in os.listdir( userInput.get('dataSource') ):
             name = 'wave' + str(waveCount)
             waves['waves'][name] = parameters
             waveCount += 1
-            colorIndex = (peaks[0] == peaksToPlot).sum(axis=1)
+            colorIndex = (currentPeak == peaksToPlot).sum(axis=1)
             colorsToPlot[np.where(colorIndex == 2)] = 'red'
 
     # Save waves data here, if saveData boolean is true

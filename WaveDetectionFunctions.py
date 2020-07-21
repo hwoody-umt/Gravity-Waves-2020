@@ -456,7 +456,7 @@ def findPeakRegion(power, peak, plotter):
     region = np.zeros(power.shape, dtype=bool)
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.8  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.70  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
