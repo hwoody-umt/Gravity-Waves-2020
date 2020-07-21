@@ -82,7 +82,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         with open(os.path.join(userInput.get('dataSource'), file)) as json_file:
             data = json.load(json_file)
             waves = data.get('waves')
-            flightPath = data.get('flight')
+            flightPath = data.get('flightPath')
     except:
         print("JSON file does not contain wave data")
         continue
@@ -121,7 +121,7 @@ blue_line = mlines.Line2D([], [], color='blue', label='Radiosonde flight')
 red_arrow = mlines.Line2D([], [], color='w', marker=r'$\rightarrow$', markeredgecolor='red', markerfacecolor='red', markersize=15, label='Gravity Wave')
 plt.legend(handles=[blue_line, red_arrow])
 
-plt.title("Week 2 Launch 1 Radiosonde Flight")
+plt.title("Week 7 Radiosonde Flight")
 plt.xlabel("Time [UTC]")
 plt.ylabel("Altitude [km]")
 plt.show()

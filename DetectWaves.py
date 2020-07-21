@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 userInput = getAllUserInput()
 
 # Then, iterate over files in data directory
-for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get('dataSource') ):
+for file in os.listdir( userInput.get('dataSource') ):
     # Import and clean the data, given the file path
     data = cleanData( file, userInput.get('dataSource') )
 
@@ -39,6 +39,7 @@ for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get(
     peaks = findPeaks( wavelets.get('power') )
     numPeaks = len(peaks)  # To keep track of progress
     peaksToPlot = peaks.copy()  # Keep peaks for plot at end
+    colorsToPlot = np.array(['blue'] * peaks.shape[0])  # Keep track for plots at end
 
     # Numpy array for plotting purposes
     plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
@@ -54,7 +55,7 @@ for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get(
         # Output progress to console and increment counter
         displayProgress( peaks, numPeaks )
         # Identify the region surrounding the peak
-        region = findPeakRegion( wavelets.get('power'), peaks[0] )
+        region = findPeakRegion( wavelets.get('power'), peaks[0], plotter )
 
         # Update list of peaks that have yet to be analyzed
         peaks = removePeaks( region, peaks )
@@ -67,29 +68,6 @@ for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get(
 
         # Get inverted regional maximums
         wave = invertWaveletTransform( region, wavelets )
-        # Get wave parameters
-
-        #extents = [
-        #    data['Alt'][0] / 1000,
-        #    np.array(data['Alt'])[-1] / 1000,
-        #    wavelets.get('wavelengths')[0] / 1000,
-        #    wavelets.get('wavelengths')[-1] / 1000
-        #]
-        #ax = plt.axes()
-        #plt.imshow(wavelets.get('power'))#,
-        #           extent=extents)
-        #ax.set_aspect('auto')
-        #cb = plt.colorbar()
-        #plt.scatter(peaksToPlot[0], peaksToPlot[1], colors='red', marker='o')
-        #plt.contour(data['Alt']/1000, wavelets.get('wavelengths')/1000, region,
-        #            colors='red', levels=[0.5])
-        #plt.contour(region, colors='red', levels=[0.5])
-        #plt.yscale('log')
-        #plt.xlabel("Altitude [km]")
-        #plt.ylabel("Vertical Wavelength [km]")
-        #plt.title("Power surface, including traced peaks")
-        #cb.set_label("Power [m^2/s^2]")
-        #plt.show()
 
         # Perform analysis to find wave information
         parameters = getParameters( data, wave, spatialResolution, region )
@@ -98,6 +76,8 @@ for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get(
             name = 'wave' + str(waveCount)
             waves['waves'][name] = parameters
             waveCount += 1
+            colorIndex = (peaks[0] == peaksToPlot).sum(axis=1)
+            colorsToPlot[np.where(colorIndex == 2)] = 'red'
 
     # Save waves data here, if saveData boolean is true
     if userInput.get('saveData'):
@@ -124,8 +104,8 @@ for file in ["W7_L1_0500UTC_071620_Ace_Profile.txt"]:#os.listdir( userInput.get(
     #            colors='red')
     #plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, np.flip(yScale)[peaksToPlot.T[0]], marker='.',
     #            edgecolors='red')
-    plt.scatter(peaksToPlot[0], peaksToPlot[1], edgecolors='red', marker='o')
-    plt.contour(region, colors='red', levels=[0.5])
+    plt.scatter(peaksToPlot[:, 1], peaksToPlot[:, 0], c=colorsToPlot, marker='*')
+    plt.contour(plotter, colors='red', levels=[0.5])
     plt.xlabel("Altitude [index]")
     plt.ylabel("Vertical Wavelength [index]")
     plt.title("Power surface, including traced peaks")

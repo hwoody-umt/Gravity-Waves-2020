@@ -434,27 +434,29 @@ def findPeaks(power):
     print("\nSearching for local maxima in power surface", end='')
 
     # Find and return coordinates of local maximums
-    cutOff = 0.25  # Disregard maximums less than cutOff * imageMax
+    cutOff = 0.05  # Disregard maximums less than cutOff
     margin = 10  # Disregard maximums less than margin from image border, must be pos integer
-    distance = 1  # Disregard maximums less than distance away from each other, must be pos integer
-    # Finds local maxima based on distance, cutOff, margin
-    peaks = peak_local_max(power, min_distance=distance, threshold_rel=cutOff, exclude_border=margin)
+    # Finds local maxima based on cutOff, margin
+    peaks = peak_local_max(power, threshold_rel=cutOff, exclude_border=margin)
+
+    # Currently debugging and testing this sort
+    peaks = [x for _, x in sorted(zip(power[peaks[:,0], peaks[:,1]], peaks))]
 
     print()  # Newline for next console output
 
-    return peaks  # Array of coordinate arrays
+    return np.array(peaks)  # Array of coordinate arrays
 
 def displayProgress(peaks, length):
     # Console output to keep user up to date
     print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
 
 
-def findPeakRegion(power, peak):
+def findPeakRegion(power, peak, plotter):
     # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.5  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.8  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
@@ -467,22 +469,30 @@ def findPeakRegion(power, peak):
         if p.contains_points([[peak[0], peak[1]]]):
 
             # If contour is not closed (includes an edge), close it manually
-            if not (contour[0,:] == contour[-1,:]).all():  # Doesn't end where it starts, must be open
-                print(contour[0,:])
-                print(contour[-1,:])
-                print()
-                print(np.arange(int(contour[-1, 0]), int(contour[0, 0])+1))
-                print(np.arange(int(contour[-1, 1]), int(contour[0, 1])+1))
+            if not (contour[0, :] == contour[-1, :]).all():  # Doesn't end where it starts, must be open
+                region[peak[0], peak[1]] = True
+                return region
                 # Get all points in between ends of contour
-                index = [[x, y] for x in np.arange(int(contour[-1, 0]), int(contour[0, 0])+1) for y in
-                         np.arange(int(contour[-1, 1]), int(contour[0, 1])+1)]
-                print(index)
-                print()
-                print(contour)
+
+                # Assume positive directions for x and y iterations
+                #rowDir = 1
+                #colDir = 1
+                # If not, change step to a negative
+                #if contour[0, 0] < contour[-1, 0]:
+                #    rowDir = -1
+                #if contour[0, 1] < contour[-1, 1]:
+                #    colDir = -1
+
+                # List the rows and columns to iterate over
+                #rows = range(int(round(contour[-1, 0])), int(round(contour[0, 0]) + 1), rowDir)
+                #cols = range(int(round(contour[-1, 1])), int(round(contour[0, 1]) + 1), colDir)
+
+                # Finally, put index in proper format [ [row, col], [row2, col2] ]
+                #index = [[x, y] for x in rows for y in cols]
+                #index = np.array(index)
+
                 # Add all points onto the end of contour
-                contour = np.append(contour, index)
-                print()
-                print(contour)
+                #contour = np.concatenate((contour, index), axis=0)
 
             # If it is, set the boundary path to True
             region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
@@ -490,10 +500,8 @@ def findPeakRegion(power, peak):
             # Then fill in the contour to create mask surrounding peak
             region = binary_fill_holes(region)
 
-            plt.imshow(region)
-            plt.show()
-
             # The method is now done, so return region
+            region[plotter] = False
             return region
 
     # If for some reason the method couldn't isolate a region surrounding the peak,
