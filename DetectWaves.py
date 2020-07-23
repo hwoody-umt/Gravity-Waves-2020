@@ -5,8 +5,6 @@ import json
 import matplotlib.pyplot as plt
 
 
-########## ACTUAL RUNNING CODE ##########
-
 # First, get applicable user input.
 userInput = getAllUserInput()
 
