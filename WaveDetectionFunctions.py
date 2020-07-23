@@ -338,6 +338,7 @@ def readFromData(file, path):
 
 ########## PERFORMING ANALYSIS ##########
 
+
 def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
 
     # First, filter data to remove sub-PBL data
@@ -371,6 +372,7 @@ def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
     data['Time'] = times  # Assign copy back to original data column
 
     return data  # Return pandas data frame
+
 
 def waveletTransform(data, spatialResolution, wavelet):
 
@@ -428,6 +430,7 @@ def waveletTransform(data, spatialResolution, wavelet):
 
     return results  # Dictionary of wavelet-transformed surfaces
 
+
 def findPeaks(power):
 
     # UI console output to keep user informed
@@ -440,11 +443,13 @@ def findPeaks(power):
     peaks = peak_local_max(power, threshold_rel=cutOff, exclude_border=margin)
 
     # Currently debugging and testing this sort
-    peaks = [x for _, x in sorted(zip(power[peaks[:,0], peaks[:,1]], peaks))]
+    # Update 7/23, not needed for now
+    #peaks = [x for _, x in sorted(zip(power[peaks[:,0], peaks[:,1]], peaks))]
 
     print()  # Newline for next console output
 
     return np.array(peaks)  # Array of coordinate arrays
+
 
 def displayProgress(peaks, length):
     # Console output to keep user up to date
@@ -484,12 +489,13 @@ def findPeakSquare(power, peak):
 
     return region
 
-def findPeakRegion(power, peak, plotter):
+
+def findPeakRegion(power, peak):
     # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.75  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.70  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
@@ -534,7 +540,6 @@ def findPeakRegion(power, peak, plotter):
             region = binary_fill_holes(region)
 
             # The method is now done, so return region
-            region[plotter] = False
             return region
 
     # If for some reason the method couldn't isolate a region surrounding the peak,
@@ -553,6 +558,7 @@ def removePeaks(region, peaks):
             toRem.append(n)  # add peak to removal index
     peaks = [ value for (i, value) in enumerate(peaks) if i not in set(toRem) ]  # Then remove those peaks from peaks list
     return peaks  # Return shortened list of peaks
+
 
 def updatePlotter(region, plotter):
     # Copy the peak estimate to a plotting map

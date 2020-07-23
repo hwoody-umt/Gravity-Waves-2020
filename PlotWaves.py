@@ -5,17 +5,30 @@ import json
 import matplotlib.dates as mdates
 import datetime
 import matplotlib.lines as mlines
+from numpy.core.defchararray import lower
 from WaveDetectionFunctions import getUserInputFile
 
+def getUserInputHD():
+    print("Enter the unit of time to use with this plot:")
+    userInput = ""
+    while not userInput:
+        userInput = input()
+        if lower(userInput) != "hours" and lower(userInput) != "days" and lower(userInput) != "months" and lower(userInput) != "years":
+            print("Please enter either 'hours', 'days', 'months', or 'years':")
+            userInput = ""
+
+    return lower(userInput)
 
 def getAllUserInput():
     dataSource = getUserInputFile("Enter path to data input directory:")
+    unitHours = getUserInputHD()
     print("Enter plot title:")
     plotTitle = input()
 
     # Build a dictionary to return values
     results = {
         'dataSource': dataSource,
+        'units': unitHours,
         'title': plotTitle
     }
 
@@ -26,9 +39,14 @@ def getAllUserInput():
 
 userInput = getAllUserInput()
 plt.gca().xaxis_date()
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-
-print(os.listdir( userInput.get('dataSource') ))
+if userInput.get('units') == "hours":
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+elif userInput.get('units') == "days":
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+elif userInput.get('units') == "months":
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+elif userInput.get('units') == "years":
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
 
 quiverLegendHandle = 0
 

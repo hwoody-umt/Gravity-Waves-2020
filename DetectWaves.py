@@ -21,7 +21,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         continue
 
     launchDateTime, pblHeight = readFromData( file, userInput.get('dataSource'))
-    spatialResolution = 4  # meters in between uniformly distributed data points, must be pos integer
+    spatialResolution = 5  # meters in between uniformly distributed data points, must be pos integer
     data = interpolateData( data, spatialResolution, pblHeight, launchDateTime )
 
     # If nothing was returned, file was missing too much data,
@@ -139,7 +139,7 @@ for file in os.listdir( userInput.get('dataSource') ):
     ax.set_ylabel('log10(vertical wavelength)')
     ax.set_xlabel('Altitude [km]')
     if userInput.get('saveData'):
-        plt.savefig(userInput.get('savePath') + "/" + file[0:-4] + "_power_surface.png")
+        plt.savefig(userInput.get('savePath') + "/" + file[0:-4] + "_power_surface_3D.png")
     if userInput.get('showPlots'):
         plt.show()
     plt.close()
