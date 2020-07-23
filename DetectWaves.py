@@ -1,8 +1,10 @@
-from WaveDetectionFunctions import getAllUserInput, cleanData, readFromData, interpolateData, drawPlots, waveletTransform, findPeaks, displayProgress, findPeakRegion, removePeaks, updatePlotter, invertWaveletTransform, getParameters
+from WaveDetectionFunctions import getAllUserInput, cleanData, readFromData, interpolateData, findPeakSquare, waveletTransform, findPeaks, displayProgress, findPeakRegion, removePeaks, updatePlotter, invertWaveletTransform, getParameters
 import numpy as np
 import os
 import json
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
+from matplotlib import cm
 
 
 ########## ACTUAL RUNNING CODE ##########
@@ -55,6 +57,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         # Output progress to console and increment counter
         displayProgress( peaks, numPeaks )
         # Identify the region surrounding the peak
+        #region = findPeakRegion( wavelets.get('power'), peaks[0], plotter )
         region = findPeakRegion( wavelets.get('power'), peaks[0], plotter )
 
         #Save for plotting
@@ -65,6 +68,23 @@ for file in os.listdir( userInput.get('dataSource') ):
 
         if region.sum().sum() <= 1:  # Only found the peak, not the region
             continue  # Don't bother analyzing the single cell
+
+        #ax = plt.axes()
+        #plt.imshow(wavelets.get('power'))  # ,
+        # extent=extents)
+        #ax.set_aspect('auto')
+        #cb = plt.colorbar()
+        # plt.contour(data['Alt'] / 1000, np.flip(yScale), plotter,
+        #            colors='red')
+        # plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, np.flip(yScale)[peaksToPlot.T[0]], marker='.',
+        #            edgecolors='red')
+        #plt.scatter(peaksToPlot[:, 1], peaksToPlot[:, 0], c=colorsToPlot, marker='*')
+        #plt.contour(region, colors='red', levels=[0.5])
+        #plt.xlabel("Altitude [index]")
+        #plt.ylabel("Vertical Wavelength [index]")
+        #plt.title("Power surface, including traced peaks")
+        #cb.set_label("Power [m^2/s^2]")
+        #plt.show()
 
         # Update plotting mask
         plotter = updatePlotter( region, plotter )
@@ -90,27 +110,19 @@ for file in os.listdir( userInput.get('dataSource') ):
 
     # Also, build nice output plot
 
-    #yScale = wavelets.get('wavelengths')
-
-    #extents = [
-    #    data['Alt'][0] / 1000,
-    #    data['Alt'][len(data['Alt']) - 1] / 1000,
-    #    yScale[0],
-    #    yScale[len(yScale) - 1]
-    #]
-    ax = plt.axes()
-    plt.imshow(wavelets.get('power'))#,
-    #extent=extents)
-    ax.set_aspect('auto')
+    yScale = wavelets.get('wavelengths')
+    #plt.imshow(wavelets.get('power'), extent=extents, origin='lower')
+    plt.contourf(data['Alt'] / 1000, yScale, wavelets.get('power'), levels=50)
     cb = plt.colorbar()
-    #plt.contour(data['Alt'] / 1000, np.flip(yScale), plotter,
-    #            colors='red')
-    #plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, np.flip(yScale)[peaksToPlot.T[0]], marker='.',
-    #            edgecolors='red')
-    plt.scatter(peaksToPlot[:, 1], peaksToPlot[:, 0], c=colorsToPlot, marker='*')
-    plt.contour(plotter, colors='red', levels=[0.5])
-    plt.xlabel("Altitude [index]")
-    plt.ylabel("Vertical Wavelength [index]")
+    plt.contour(data['Alt'] / 1000, yScale, plotter,
+                colors='red', levels=[0.5])
+    plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
+    #plt.scatter(peaksToPlot[:, 1], peaksToPlot[:, 0], c=colorsToPlot, marker='*')
+    #plt.contour(plotter, colors='red', levels=[0.5])
+    #ax.set_aspect('auto')
+    plt.yscale("log")
+    plt.xlabel("Altitude [km]")
+    plt.ylabel("Vertical Wavelength [m]")
     plt.title("Power surface, including traced peaks")
     cb.set_label("Power [m^2/s^2]")
 
@@ -119,6 +131,21 @@ for file in os.listdir( userInput.get('dataSource') ):
     if userInput.get('showPlots'):
         plt.show()
     plt.close()
+
+    X, Y = np.meshgrid(data['Alt'] / 1000, np.log10(yScale))
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    surf = ax.plot_surface(X, Y, wavelets.get('power'), cmap=cm.viridis)
+    fig.colorbar(surf)
+    ax.set_zlabel('Power [m^2(s^-2)]')
+    ax.set_ylabel('log10(vertical wavelength)')
+    ax.set_xlabel('Altitude [km]')
+    if userInput.get('saveData'):
+        plt.savefig(userInput.get('savePath') + "/" + file[0:-4] + "_power_surface.png")
+    if userInput.get('showPlots'):
+        plt.show()
+    plt.close()
+
     print("\nFinished file analysis")
 
 ########## FINISHED ANALYSIS ##########

@@ -133,7 +133,7 @@ def wavelet(Y, dt, pad=False, dj=-1, s0=-1, J1=-1, mother=-1, param=-1):
 
     period = fourier_factor * scale  # [Table(1)]
     coi = coi * dt * np.concatenate((np.insert(np.arange(int((n1 + 1) / 2 - 1)), [0], [1E-5]),
-        np.insert(np.flipud(np.arange(0, n1 / 2 - 1)), [-1], [1E-5])))  # COI [Sec.3g]
+            np.insert(np.flipud(np.arange(0, n1 / 2 - 1)), [-1], [1E-5])))  # COI [Sec.3g]
     wave = wave[:, :n1]  # get rid of padding before returning
 
     return wave, period, scale, coi
