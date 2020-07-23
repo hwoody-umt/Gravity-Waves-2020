@@ -1,6 +1,22 @@
 {
     "waves": {
         "wave1": {
+            "Altitude [km]": 20.895,
+            "Latitude [deg]": 46.7873086,
+            "Longitude [deg]": -111.5816714,
+            "Date and Time [UTC]": "2020-07-22 18:12:28.200000",
+            "Vertical wavelength [km]": 2.190083385338429,
+            "Horizontal wavelength [km]": 223.7913804415594,
+            "Angle of wave [deg]": -85.62285950492137,
+            "Axial ratio [no units]": 1.862272207438745,
+            "Intrinsic vertical group velocity [m/s]": -0.06647014006650206,
+            "Intrinsic horizontal group velocity [m/s]": 6.792181751256758,
+            "Intrinsic vertical phase speed [m/s]": 0.09340230541150009,
+            "Intrinsic horizontal phase speed [m/s]": 9.54421690260606,
+            "Degree of Polarization [no units]": 0.969968438756971,
+            "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.5540192910875433
+        },
+        "wave2": {
             "Altitude [km]": 22.31,
             "Latitude [deg]": 46.786489,
             "Longitude [deg]": -111.607875,

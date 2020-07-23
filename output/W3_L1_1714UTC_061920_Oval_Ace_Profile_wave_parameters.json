@@ -1,20 +1,20 @@
 {
     "waves": {
         "wave1": {
-            "Altitude [km]": 25.9515,
-            "Latitude [deg]": 46.5474692,
-            "Longitude [deg]": -113.66713100000001,
-            "Date and Time [UTC]": "2020-06-19 18:46:19.400000",
-            "Vertical wavelength [km]": 1.1897573851699172,
-            "Horizontal wavelength [km]": 24.46435144377956,
-            "Angle of wave [deg]": 120.19301047105934,
-            "Axial ratio [no units]": 8.654847606883626,
-            "Intrinsic vertical group velocity [m/s]": -0.19874718099054822,
-            "Intrinsic horizontal group velocity [m/s]": 4.086733097705319,
-            "Intrinsic vertical phase speed [m/s]": 0.20143635561798584,
-            "Intrinsic horizontal phase speed [m/s]": 4.142029172349927,
-            "Degree of Polarization [no units]": 0.9593472748660734,
-            "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.08550949407643418
+            "Altitude [km]": 28.179,
+            "Latitude [deg]": 46.547412666666666,
+            "Longitude [deg]": -113.73412166666667,
+            "Date and Time [UTC]": "2020-06-19 18:52:50.666667",
+            "Vertical wavelength [km]": 4.500268043628023,
+            "Horizontal wavelength [km]": 363.2457311845183,
+            "Angle of wave [deg]": 223.0472420366409,
+            "Axial ratio [no units]": 2.4517837151634176,
+            "Intrinsic vertical group velocity [m/s]": -0.1799375251104935,
+            "Intrinsic horizontal group velocity [m/s]": 14.523921073732469,
+            "Intrinsic vertical phase speed [m/s]": 0.21584428741529865,
+            "Intrinsic horizontal phase speed [m/s]": 17.42218802170801,
+            "Degree of Polarization [no units]": 0.9841997086278431,
+            "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.351276358938889
         },
         "wave2": {
             "Altitude [km]": 12.0715,
@@ -31,6 +31,22 @@
             "Intrinsic horizontal phase speed [m/s]": 19.40721692532246,
             "Degree of Polarization [no units]": 0.9952795334596071,
             "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": -0.14292071404691054
+        },
+        "wave3": {
+            "Altitude [km]": 25.9515,
+            "Latitude [deg]": 46.5474692,
+            "Longitude [deg]": -113.66713100000001,
+            "Date and Time [UTC]": "2020-06-19 18:46:19.400000",
+            "Vertical wavelength [km]": 1.1897573851699172,
+            "Horizontal wavelength [km]": 24.46435144377956,
+            "Angle of wave [deg]": 120.19301047105934,
+            "Axial ratio [no units]": 8.654847606883626,
+            "Intrinsic vertical group velocity [m/s]": -0.19874718099054822,
+            "Intrinsic horizontal group velocity [m/s]": 4.086733097705319,
+            "Intrinsic vertical phase speed [m/s]": 0.20143635561798584,
+            "Intrinsic horizontal phase speed [m/s]": 4.142029172349927,
+            "Degree of Polarization [no units]": 0.9593472748660734,
+            "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.08550949407643418
         }
     },
     "flightPath": {

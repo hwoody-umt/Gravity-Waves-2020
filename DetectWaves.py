@@ -52,11 +52,10 @@ for file in os.listdir( userInput.get('dataSource') ):
 
     # Iterate over local maximums to identify wave characteristics
     while len(peaks) > 0:
-        # Output progress to console and increment counter
+        # Output progress to console, keeping user in the loop
         displayProgress( peaks, numPeaks )
         # Identify the region surrounding the peak
-        #region = findPeakRegion( wavelets.get('power'), peaks[0], plotter )
-        region = findPeakRegion( wavelets.get('power'), peaks[0], plotter )
+        region = findPeakRegion( wavelets.get('power'), peaks[0])
 
         #Save for plotting
         currentPeak = peaks[0]

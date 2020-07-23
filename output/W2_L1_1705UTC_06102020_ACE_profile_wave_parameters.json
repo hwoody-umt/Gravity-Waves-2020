@@ -1,22 +1,6 @@
 {
     "waves": {
         "wave1": {
-            "Altitude [km]": 27.601,
-            "Latitude [deg]": 46.78659066666667,
-            "Longitude [deg]": -113.66782666666667,
-            "Date and Time [UTC]": "2020-06-10 18:26:54.666667",
-            "Vertical wavelength [km]": 1.0398561202472283,
-            "Horizontal wavelength [km]": 56.92535875395743,
-            "Angle of wave [deg]": 97.54128299846205,
-            "Axial ratio [no units]": 5.249951019668588,
-            "Intrinsic vertical group velocity [m/s]": -0.06747018512173276,
-            "Intrinsic horizontal group velocity [m/s]": 3.693553770051772,
-            "Intrinsic vertical phase speed [m/s]": 0.07001028833017162,
-            "Intrinsic horizontal phase speed [m/s]": 3.8326078984037615,
-            "Degree of Polarization [no units]": 0.9880897981667884,
-            "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.09765756991233925
-        },
-        "wave2": {
             "Altitude [km]": 20.1885,
             "Latitude [deg]": 46.7612,
             "Longitude [deg]": -113.4908508,
@@ -31,6 +15,22 @@
             "Intrinsic horizontal phase speed [m/s]": 5.57230725746432,
             "Degree of Polarization [no units]": 0.9803596982245301,
             "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.7870058606877186
+        },
+        "wave2": {
+            "Altitude [km]": 27.601,
+            "Latitude [deg]": 46.78659066666667,
+            "Longitude [deg]": -113.66782666666667,
+            "Date and Time [UTC]": "2020-06-10 18:26:54.666667",
+            "Vertical wavelength [km]": 1.0398561202472283,
+            "Horizontal wavelength [km]": 56.92535875395743,
+            "Angle of wave [deg]": 97.54128299846205,
+            "Axial ratio [no units]": 5.249951019668588,
+            "Intrinsic vertical group velocity [m/s]": -0.06747018512173276,
+            "Intrinsic horizontal group velocity [m/s]": 3.693553770051772,
+            "Intrinsic vertical phase speed [m/s]": 0.07001028833017162,
+            "Intrinsic horizontal phase speed [m/s]": 3.8326078984037615,
+            "Degree of Polarization [no units]": 0.9880897981667884,
+            "Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]": 0.09765756991233925
         }
     },
     "flightPath": {
