@@ -390,9 +390,9 @@ def waveletTransform(data, spatialResolution, wavelet):
     # In preperation for wavelet transformation, define variables
     # From Torrence & Compo (1998)
     padding = 1  # Pad the data with zeros to allow convolution to edge of data
-    scaleResolution = 1/1500  # This is a scale thingamobober
+    scaleResolution = 1/1000  # This is a scale thingamobober
     smallestScale = 100  # This number is the smallest wavelet scale
-    #j1 = 10/dj  # This number is how many scales to compute
+    howManyScales = 10/scaleResolution  # This number is how many scales to compute
 
     # Lay groundwork for inversions, outside of local max. loop
     # Derived from Torrence & Compo, 1998, Equation 11 and Table 2
@@ -400,11 +400,11 @@ def waveletTransform(data, spatialResolution, wavelet):
 
     # Now, do the actual wavelet transform
     print("Performing wavelet transform on U... (1/3)", end='')  # Console output, to be updated
-    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
     print("\rPerforming wavelet transform on V... (2/3)", end='')  # Update to keep user informed
-    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
     print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console update for wavelet transform
-    coefT, periods, scales, coi = continuousWaveletTransform(data['T'], spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefT, periods, scales, coi = continuousWaveletTransform(data['T'], spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
 
 
     # Power surface is sum of squares of u and v wavelet transformed surfaces
@@ -451,12 +451,45 @@ def displayProgress(peaks, length):
     print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
 
 
+def findPeakSquare(power, peak):
+    # Create boolean mask, initialized as False
+    region = np.zeros(power.shape, dtype=bool)
+
+    powerLimit = 0.25 * power[peak[0], peak[1]]
+
+    increments = [
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+        [0, -1]
+    ]
+
+    limits = [peak[0], peak[0], peak[1], peak[1]]
+
+    for i in increments:
+        r, c = (peak[0], peak[1])
+        while power[r-i[0], c-i[1]] > power[r, c] > powerLimit:
+            r += i[0]
+            c += i[1]
+        if r < limits[0]:
+            limits[0] = r
+        if r > limits[1]:
+            limits[1] = r
+        if c < limits[2]:
+            limits[2] = c
+        if c > limits[3]:
+            limits[3] = c
+
+    region[np.arange(limits[0], limits[1]), np.arange(limits[2], limits[3])] = True
+
+    return region
+
 def findPeakRegion(power, peak, plotter):
     # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.70  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.75  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
