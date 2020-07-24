@@ -634,8 +634,10 @@ def getParameters(data, wave, spatialResolution, region):
     if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
         return {}
 
-    theta = 0.5 * np.arctan2(P, D)  # What the hell?
-    axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))  # What is this?
+    theta = 0.5 * np.arctan2(P, D)  # What is arctan2() and what makes it different from arctan()?
+    # Method from Tom's matlab code, replaced by one below from Murphy (2014)
+    #axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
+
 
     # Classic 2x2 rotation matrix
     rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
@@ -653,7 +655,7 @@ def getParameters(data, wave, spatialResolution, region):
         theta = theta + np.pi
 
     coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
-    intrinsicF = coriolisF * axialRatio
+    intrinsicF = coriolisF * (abs(uvComp[0])/abs(uvComp[1]))  # Changed from Tom's code to match Murphy Table 1
 
     bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared???
     bvMean = np.mean(np.array(bvF2)[waveAlts])  # Mean of bvF2 across region
