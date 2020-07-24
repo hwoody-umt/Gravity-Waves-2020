@@ -382,11 +382,11 @@ def waveletTransform(data, spatialResolution, wavelet):
 
     # Subtract rolling mean (assumed to be background wind)
     # Window calculation here is kinda sketchy, so investigate
-    # N = max( altitude extent / height sampling / 4, 11) in Tom's code
-    N = 1000  # We'll go with 1 km for now and then come back to see what's up later
-    rMean = pd.Series(u).rolling(window=N, min_periods=1, center=True).mean()
+    N = np.max( [int((np.max(data['Alt']) - np.min(data['Alt'])) / spatialResolution / 4), 11] )
+    # Also, figure out what min_periods is really doing and make a reason for picking a good value
+    rMean = pd.Series(u).rolling(window=N, min_periods=int(N/2), center=True).mean()
     u = u - rMean
-    rMean = pd.Series(v).rolling(window=N, min_periods=500, center=True).mean()
+    rMean = pd.Series(v).rolling(window=N, min_periods=int(N/2), center=True).mean()
     v = v - rMean
 
     # In preperation for wavelet transformation, define variables
@@ -495,7 +495,7 @@ def findPeakRegion(power, peak):
     region = np.zeros(power.shape, dtype=bool)
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.70  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.75  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
@@ -636,12 +636,14 @@ def getParameters(data, wave, spatialResolution, region):
 
     theta = 0.5 * np.arctan2(P, D)  # What is arctan2() and what makes it different from arctan()?
     # Method from Tom's matlab code, replaced by one below from Murphy (2014)
-    #axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
+    axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
 
 
     # Classic 2x2 rotation matrix
     rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
     uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
+
+    #axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])  # Changed from Tom's code to match Murphy Table 1
 
     # Make hodograph plot, for debugging
     #plt.scatter(uTrim, vTrim, marker='o', color='b')
@@ -655,7 +657,8 @@ def getParameters(data, wave, spatialResolution, region):
         theta = theta + np.pi
 
     coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
-    intrinsicF = coriolisF * (abs(uvComp[0])/abs(uvComp[1]))  # Changed from Tom's code to match Murphy Table 1
+
+    intrinsicF = coriolisF * axialRatio
 
     bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared???
     bvMean = np.mean(np.array(bvF2)[waveAlts])  # Mean of bvF2 across region

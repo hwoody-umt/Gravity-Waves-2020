@@ -44,9 +44,10 @@ for file in os.listdir( userInput.get('dataSource') ):
     # Numpy array for plotting purposes
     plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
 
+    trimIndex = np.arange(0, len(data['Time']), 50)  # Only save 1/50 of the data for plotting, the detail isn't all needed
     waves = {
         'waves': {},  # Empty dictionary, to contain wave characteristics
-        'flightPath': {'time': np.array(data['Time']).tolist(), 'alt': np.array(data['Alt']).tolist()}  # Flight path for plotting results
+        'flightPath': {'time': np.array(data['Time'][trimIndex]).tolist(), 'alt': np.array(data['Alt'][trimIndex]).tolist()}  # Flight path for plotting results
     }
     waveCount = 1  # For naming output waves
 
@@ -57,7 +58,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         # Identify the region surrounding the peak
         region = findPeakRegion( wavelets.get('power'), peaks[0])
 
-        #Save for plotting
+        # Save for plotting
         currentPeak = peaks[0]
 
         # Update list of peaks that have yet to be analyzed
@@ -106,6 +107,8 @@ for file in os.listdir( userInput.get('dataSource') ):
             json.dump(waves, writeFile, indent=4, default=str)
 
     # Also, build nice output plot
+    print("\nGenerating power surface plots", end='')
+
 
     yScale = wavelets.get('wavelengths')
     #plt.imshow(wavelets.get('power'), extent=extents, origin='lower')
