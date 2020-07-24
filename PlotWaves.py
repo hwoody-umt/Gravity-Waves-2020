@@ -6,7 +6,8 @@ import matplotlib.dates as mdates
 import datetime
 import matplotlib.lines as mlines
 from numpy.core.defchararray import lower
-from WaveDetectionFunctions import getUserInputFile
+from WaveDetectionFunctions import getUserInputFile, getUserInputTF
+
 
 def getUserInputHD():
     print("Enter the unit of time to use with this plot:")
@@ -19,9 +20,11 @@ def getUserInputHD():
 
     return lower(userInput)
 
+
 def getAllUserInput():
     dataSource = getUserInputFile("Enter path to data input directory:")
     unitHours = getUserInputHD()
+    plot3D = getUserInputTF("Would you like to generate a 3D plot?")
     print("Enter plot title:")
     plotTitle = input()
 
@@ -29,6 +32,7 @@ def getAllUserInput():
     results = {
         'dataSource': dataSource,
         'units': unitHours,
+        'plot3D': plot3D,
         'title': plotTitle
     }
 
@@ -38,17 +42,24 @@ def getAllUserInput():
 ########## Real code (not functions) goes here ##########
 
 userInput = getAllUserInput()
-plt.gca().xaxis_date()
-if userInput.get('units') == "hours":
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-elif userInput.get('units') == "days":
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-elif userInput.get('units') == "months":
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%b'))
-elif userInput.get('units') == "years":
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
 
-quiverLegendHandle = 0
+fig = plt.figure()
+
+if userInput.get('plot3D'):
+    ax = fig.gca(projection='3d')
+else:
+    ax = fig.gca()
+
+ax.xaxis_date()
+
+if userInput.get('units') == "hours":
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+elif userInput.get('units') == "days":
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+elif userInput.get('units') == "months":
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+elif userInput.get('units') == "years":
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
 
 for file in os.listdir( userInput.get('dataSource') ):
     if not file.endswith(".json"):
@@ -71,6 +82,7 @@ for file in os.listdir( userInput.get('dataSource') ):
     Y = []
     U = []
     V = []
+    W = []
 
     for wave in waves.values():
 
@@ -83,10 +95,19 @@ for file in os.listdir( userInput.get('dataSource') ):
 
         U.append( mag * np.sin( angle * np.pi / 180 ) )
         V.append( mag * np.cos( angle * np.pi / 180 ) )
+        W.append(wave.get('Intrinsic vertical group velocity [m/s]'))
 
     X = [datetime.datetime.strptime(date.split('.', 1)[0], '%Y-%m-%d %H:%M:%S') for date in X]
 
-    plt.quiver(X, Y, U, V, color='red')
+    if userInput.get('plot3D'):
+        X = mdates.date2num(X)
+        #x, y, z = np.meshgrid(X, np.zeros(len(X)), Y)
+
+        #u, v, w = np.meshgrid(U, V, W)
+        ax.quiver(X, np.zeros(len(X)), Y, U, V, W, color='red')
+
+    else:
+        plt.quiver(X, Y, U, V, color='red')
 
     X = flightPath.get('time')
     X = [datetime.datetime.strptime(date.split('.', 1)[0], '%Y-%m-%d %H:%M:%S') for date in X]
@@ -94,7 +115,11 @@ for file in os.listdir( userInput.get('dataSource') ):
     Y = flightPath.get('alt')
     Y = np.array(Y) / 1000  # convert to km
 
-    plt.plot( X, Y, color='blue')
+    if userInput.get('plot3D'):
+        X = mdates.date2num(X)
+        ax.plot(X, np.zeros(len(X)), Y, color='blue')
+    else:
+        plt.plot( X, Y, color='blue')
 
 
 blue_line = mlines.Line2D([], [], color='blue', label='Radiosonde flight')
@@ -102,8 +127,18 @@ red_arrow = mlines.Line2D([], [], color='w', marker=r'$\rightarrow$', markeredge
 plt.legend(handles=[blue_line, red_arrow])
 
 plt.title(userInput.get('title'))
-plt.xlabel("Time [UTC]")
-plt.ylabel("Altitude [km]")
+if userInput.get('units') == "hours":
+    plt.xlabel("Time [UTC]")
+else:
+    plt.xlabel("Date [UTC]")
+
+if userInput.get('plot3D'):
+    ax.set_zlabel("Altitude [km]")
+    plt.ylim(-10,10)
+    ax.set_yticks([])
+    ax.set_yticks([], minor=True)
+else:
+    plt.ylabel("Altitude [km]")
 plt.show()
 
 
