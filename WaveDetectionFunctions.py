@@ -388,6 +388,8 @@ def waveletTransform(data, spatialResolution, wavelet):
     u = u - rMean
     rMean = pd.Series(v).rolling(window=N, min_periods=int(N/2), center=True).mean()
     v = v - rMean
+    rMean = pd.Series(data['T']).rolling(window=N, min_periods=int(N / 2), center=True).mean()
+    t = data['T'] - rMean
 
     # In preperation for wavelet transformation, define variables
     # From Torrence & Compo (1998)
@@ -395,6 +397,7 @@ def waveletTransform(data, spatialResolution, wavelet):
     scaleResolution = 1/1000  # This is a scale thingamobober
     smallestScale = 100  # This number is the smallest wavelet scale
     howManyScales = 10/scaleResolution  # This number is how many scales to compute
+    # Check Zink & Vincent section 3.2 par. 1 to see their scales/wavelengths
 
     # Lay groundwork for inversions, outside of local max. loop
     # Derived from Torrence & Compo, 1998, Equation 11 and Table 2
@@ -406,7 +409,7 @@ def waveletTransform(data, spatialResolution, wavelet):
     print("\rPerforming wavelet transform on V... (2/3)", end='')  # Update to keep user informed
     coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
     print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console update for wavelet transform
-    coefT, periods, scales, coi = continuousWaveletTransform(data['T'], spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefT, periods, scales, coi = continuousWaveletTransform(t, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
 
 
     # Power surface is sum of squares of u and v wavelet transformed surfaces
@@ -462,30 +465,8 @@ def findPeakSquare(power, peak):
 
     powerLimit = 0.25 * power[peak[0], peak[1]]
 
-    increments = [
-        [1, 0],
-        [0, 1],
-        [-1, 0],
-        [0, -1]
-    ]
-
-    limits = [peak[0], peak[0], peak[1], peak[1]]
-
-    for i in increments:
-        r, c = (peak[0], peak[1])
-        while power[r-i[0], c-i[1]] > power[r, c] > powerLimit:
-            r += i[0]
-            c += i[1]
-        if r < limits[0]:
-            limits[0] = r
-        if r > limits[1]:
-            limits[1] = r
-        if c < limits[2]:
-            limits[2] = c
-        if c > limits[3]:
-            limits[3] = c
-
-    region[np.arange(limits[0], limits[1]), np.arange(limits[2], limits[3])] = True
+    row = power[peak[0], :]
+    col = power[:, peak[1]]
 
     return region
 
@@ -495,7 +476,7 @@ def findPeakRegion(power, peak):
     region = np.zeros(power.shape, dtype=bool)
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.75  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.60  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
@@ -623,7 +604,7 @@ def getParameters(data, wave, spatialResolution, region):
     # Potential temperature
     pt = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
 
-    # Straight from Tom's code, what are these and why do we do this?
+    # Stokes parameters, still need some verification
     I = np.mean(uTrim ** 2) + np.mean(vTrim ** 2)
     D = np.mean(uTrim ** 2) - np.mean(vTrim ** 2)
     P = np.mean(2 * uTrim * vTrim)
