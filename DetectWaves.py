@@ -56,7 +56,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         # Output progress to console, keeping user in the loop
         displayProgress( peaks, numPeaks )
         # Identify the region surrounding the peak
-        region = findPeakRegion( wavelets.get('power'), peaks[0])
+        region = findPeakSquare( wavelets.get('power'), peaks[0])
 
         # Save for plotting
         currentPeak = peaks[0]
@@ -91,7 +91,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         wave = invertWaveletTransform( region, wavelets )
 
         # Perform analysis to find wave information
-        parameters = getParameters( data, wave, spatialResolution, region )
+        parameters = getParameters( data, wave, spatialResolution, region, currentPeak[1], wavelets.get('wavelengths')[currentPeak[0]] )
         # If found, save parameters to dictionary of waves
         if parameters:
             name = 'wave' + str(waveCount)
@@ -102,12 +102,14 @@ for file in os.listdir( userInput.get('dataSource') ):
 
     # Save waves data here, if saveData boolean is true
     if userInput.get('saveData'):
+        # Sort the data first, for easier analysis
+        waves['waves'] = sorted(waves['waves'].items(), key=lambda x: x[1].get('Altitude [km]'))
         # Save waves data here, if saveData boolean is true
         with open(userInput.get('savePath') + "/" + file[0:-4] + '_wave_parameters.json', 'w') as writeFile:
             json.dump(waves, writeFile, indent=4, default=str)
 
     # Also, build nice output plot
-    print("\nGenerating power surface plots", end='')
+    print("\r\nGenerating power surface plots", end='')
 
 
     yScale = wavelets.get('wavelengths')
@@ -150,4 +152,3 @@ for file in os.listdir( userInput.get('dataSource') ):
 
 ########## FINISHED ANALYSIS ##########
 print("\nAnalyzed all files in folder "+userInput.get('dataSource')+"/")
-

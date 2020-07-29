@@ -12,6 +12,7 @@ from skimage.feature import peak_local_max  # Find local max
 import datetime  # Turning time into dates
 from skimage.measure import find_contours  # Find contour levels around local max
 from scipy.ndimage.morphology import binary_fill_holes  # Then fill in those contour levels
+from scipy.signal import argrelextrema
 
 ########## PBL AND STABILITY CALCULATIONS ##########
 
@@ -381,8 +382,8 @@ def waveletTransform(data, spatialResolution, wavelet):
     v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
     # Subtract rolling mean (assumed to be background wind)
-    # Window calculation here is kinda sketchy, so investigate
-    N = np.max( [int((np.max(data['Alt']) - np.min(data['Alt'])) / spatialResolution / 4), 11] )
+    # Up next, try a 2-3 order polynomial fit instead and see if there's a big difference
+    N = int(len(data['Alt']) / 4)
     # Also, figure out what min_periods is really doing and make a reason for picking a good value
     rMean = pd.Series(u).rolling(window=N, min_periods=int(N/2), center=True).mean()
     u = u - rMean
@@ -468,51 +469,68 @@ def findPeakSquare(power, peak):
     row = power[peak[0], :]
     col = power[:, peak[1]]
 
+    rowMins = np.array(argrelextrema(row, np.less))
+    rowMins = np.append(rowMins, np.where(row <= powerLimit))
+    rowMins = np.sort(np.append(rowMins, [0, peak[1], power.shape[1]-1]))
+    cols = np.arange( rowMins[np.where(rowMins == peak[1])[0]-1], rowMins[np.where(rowMins == peak[1])[0]+1] + 1).tolist()
+
+    colMins = np.array(argrelextrema(col, np.less))
+    colMins = np.append(colMins, np.where(col <= powerLimit))
+    colMins = np.sort(np.append(colMins, [0, peak[0], power.shape[0]-1]))
+    rows = np.arange(colMins[np.where(colMins == peak[0])[0] - 1][0], colMins[np.where(colMins == peak[0])[0] + 1][0] + 1).tolist()
+
+    region[np.ix_(rows, cols)] = True
+
     return region
 
 
 def findPeakRegion(power, peak):
     # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
+    region[peak[0], peak[1]] = True
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.60  # Empirically determined parameter, to be adjusted
+    relativePowerLevel = 0.65  # Empirically determined parameter, to be adjusted
     absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
     # Find all the contours at cut-off level
     contours = find_contours(power, absolutePowerLevel)
 
     # Loop through contours to find the one surrounding the peak
     for contour in contours:
+
+        # If the contour runs into multiple edges, skip as it's not worth trying
+        if contour[0, 0] != contour[-1, 0] and contour[0, 1] != contour[-1, 1]:
+            continue
+
         # Use matplotlib.path.Path to create a path
-        p = path.Path(contour)
+        p = path.Path(contour, closed=True)
         # Check to see if the peak is inside the closed loop of the contour path
         if p.contains_points([[peak[0], peak[1]]]):
 
             # If contour is not closed (includes an edge), close it manually
             if not (contour[0, :] == contour[-1, :]).all():  # Doesn't end where it starts, must be open
-                region[peak[0], peak[1]] = True
-                return region
+
                 # Get all points in between ends of contour
 
                 # Assume positive directions for x and y iterations
-                #rowDir = 1
-                #colDir = 1
+                rowDir = 0.25
+                colDir = 0.25
                 # If not, change step to a negative
-                #if contour[0, 0] < contour[-1, 0]:
-                #    rowDir = -1
-                #if contour[0, 1] < contour[-1, 1]:
-                #    colDir = -1
+                if contour[0, 0] < contour[-1, 0]:
+                    rowDir = -0.25
+                if contour[0, 1] < contour[-1, 1]:
+                    colDir = -0.25
 
                 # List the rows and columns to iterate over
-                #rows = range(int(round(contour[-1, 0])), int(round(contour[0, 0]) + 1), rowDir)
-                #cols = range(int(round(contour[-1, 1])), int(round(contour[0, 1]) + 1), colDir)
+                rows = np.arange(contour[-1, 0], contour[0, 0] + rowDir, rowDir)
+                cols = np.arange(contour[-1, 1], contour[0, 1] + colDir, colDir)
 
                 # Finally, put index in proper format [ [row, col], [row2, col2] ]
-                #index = [[x, y] for x in rows for y in cols]
-                #index = np.array(index)
+                index = [[x, y] for x in rows for y in cols]
+                index = np.array(index)
 
                 # Add all points onto the end of contour
-                #contour = np.concatenate((contour, index), axis=0)
+                contour = np.concatenate((contour, index), axis=0)
 
             # If it is, set the boundary path to True
             region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
@@ -520,8 +538,8 @@ def findPeakRegion(power, peak):
             # Then fill in the contour to create mask surrounding peak
             region = binary_fill_holes(region)
 
-            # The method is now done, so return region
-            return region
+        # The method is now done, so return region
+        return region
 
     # If for some reason the method couldn't isolate a region surrounding the peak,
     # set the peak itself to True so that it will be removed from list of peaks
@@ -546,6 +564,7 @@ def updatePlotter(region, plotter):
     plotter[region] = True
 
     return plotter  # Return plotting boolean mask
+
 
 def invertWaveletTransform(region, wavelets):
     # Invert the wavelet transform in traced region
@@ -572,12 +591,10 @@ def invertWaveletTransform(region, wavelets):
         'tTrim': tTrim
     }
 
-    # Add wavelengths (filtered according to region) for use in later analysis
-    results.update({'wavelengths': wavelets.get('wavelengths')[np.nonzero(region.sum(axis=1))]})
-
     return results  # Dictionary of trimmed inverted U, V, and T
 
-def getParameters(data, wave, spatialResolution, region):
+
+def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelength):
 
     # Get index across the altitudes of the wave, for use later
     waveAlts = np.nonzero(region.sum(axis=0))
@@ -591,7 +608,6 @@ def getParameters(data, wave, spatialResolution, region):
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
 
     # Get rid of unneeded variables, to save memory and improve performance
-    wavelengths = wave.get('wavelengths')
     del windVariance
     del wave
 
@@ -648,7 +664,7 @@ def getParameters(data, wave, spatialResolution, region):
         return {}
 
     # Vertical wavenumber [1/m]
-    m = 2 * np.pi / np.mean(wavelengths)
+    m = 2 * np.pi / wavelength
     # Horizontal wavenumber [1/m]
     kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvMean) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
     # I don't really know [m/s]
@@ -669,23 +685,21 @@ def getParameters(data, wave, spatialResolution, region):
     intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel ** 2 + intrinsicMeridionalGroupVel ** 2)
     # Horizontal wavelength [m]
     lambda_h = 2 * np.pi / kh
-    # Just average altitude of wave [m]
-    altitudeOfDetection = np.mean(np.array(data['Alt'])[waveAlts])
-    # Get index of mean altitude
-    detectionIndex = [np.min(np.abs(data['Alt'] - altitudeOfDetection)) == np.abs(data['Alt'] - altitudeOfDetection)]
+    # Altitude of wave peak
+    altitudeOfDetection = data['Alt'][waveAltIndex]
     # Get latitude at index
-    latitudeOfDetection = np.array(data['Lat.'])[tuple(detectionIndex)]
+    latitudeOfDetection = data['Lat.'][waveAltIndex]
     # Get longitude at index
-    longitudeOfDetection = np.array(data['Long.'])[tuple(detectionIndex)]
+    longitudeOfDetection = data['Long.'][waveAltIndex]
     # Get flight time at index
-    timeOfDetection = np.array(data['Time'])[tuple(detectionIndex)]
+    timeOfDetection = data['Time'][waveAltIndex]
 
     # Assemble wave properties into dictionary
     waveProp = {
         'Altitude [km]': altitudeOfDetection / 1000,
-        'Latitude [deg]': latitudeOfDetection[0],
-        'Longitude [deg]': longitudeOfDetection[0],
-        'Date and Time [UTC]': timeOfDetection[0],
+        'Latitude [deg]': latitudeOfDetection,
+        'Longitude [deg]': longitudeOfDetection,
+        'Date and Time [UTC]': timeOfDetection,
         'Vertical wavelength [km]': (2 * np.pi / m) / 1000,
         'Horizontal wavelength [km]': lambda_h / 1000,
         'Angle of wave [deg]': theta * 180 / np.pi,
