@@ -178,6 +178,76 @@ def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeigh
     plt.legend()
     plt.show()
 
+
+def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToPlot, colorsToPlot):
+    # FUNCTION PURPOSE: Create a power surface showing local maxima and their outlines
+    #
+    # INPUTS:
+    #   userInput: Dictionary containing whether to save/show the plots, as well as a save path
+    #   fileName: String, name of the profile file currently being analyzed
+    #   wavelets: Dictionary containing power surface and corresponding wavelengths
+    #   altitudes: Pandas DataFrame column with altitudes (IN KM) corresponding to the power surface
+    #   plotter: Boolean mask identifying traced regions on power surface
+    #   peaksToPlot: Numpy 2d array containing peaks, e.g. [ [x1, y1], [x2, y2], ... [xN, yN] ]
+    #   colorsToPlot: Numpy array of strings corresponding to each peak, e.g. [ "color1", "color2", ... "colorN" ]
+    #
+    # OUTPUTS: Returns nothing, prints to console and saves files and/or shows images
+
+    # If neither saving nor showing the plots, then don't bother making them
+    if not userInput('saveData') and not userInput('showPlots'):
+        return
+
+    # Console output to keep the user up to date
+    print("\r\nGenerating power surface plots", end='')
+
+    # Get the vertical wavelengths for the Y coordinates
+    yScale = wavelets.get('wavelengths')
+    # Contourf is a filled contour, which is the easiest tool to plot a colored surface
+    # Levels is set to 50 to make it nearly continuous, which takes a while,
+    # but looks good and handles the non-uniform yScale, which plt.imshow() does not
+    plt.contourf(altitudes, yScale, wavelets.get('power'), levels=50)
+    # Create a colorbar for the z scale
+    cb = plt.colorbar()
+    # Plot the outlines of the local maxima, contour is an easy way to outline a mask
+    # The 'plotter' is a boolean mask, so levels is set to 0.5 to be between 0 and 1
+    plt.contour(altitudes, yScale, plotter, colors='red', levels=[0.5])
+    # Make a scatter plot of the identified peaks, coloring them according to which ones were confirmed as waves
+    plt.scatter(altitudes[peaksToPlot.T[1]], yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
+    # Set the axis scales, labels, and titles
+    plt.yscale("log")
+    plt.xlabel("Altitude [km]")
+    plt.ylabel("Vertical Wavelength [m]")
+    plt.title("Power surface, including traced peaks")
+    cb.set_label("Power [m^2/s^2]")
+
+    # Save and/or show the plot, according to user input.
+    if userInput.get('saveData'):
+        plt.savefig(userInput.get('savePath') + "/" + fileName[0:-4] + "_power_surface.png")
+    if userInput.get('showPlots'):
+        plt.show()
+    plt.close()
+
+    # Below is code to plot the power surface in 3D.
+    # It's commented out because it doesn't look very good,
+    # and it's confusing/not that useful.
+    # However, with several innovations, it could be helpful,
+    # so it's here for the future.
+
+    #from matplotlib import cm
+    #X, Y = np.meshgrid(altitudes, np.log10(yScale))
+    #fig = plt.figure()
+    #ax = fig.gca(projection='3d')
+    #surf = ax.plot_surface(X, Y, wavelets.get('power'), cmap=cm.viridis)
+    #fig.colorbar(surf)
+    #ax.set_zlabel('Power [m^2(s^-2)]')
+    #ax.set_ylabel('log10(vertical wavelength)')
+    #ax.set_xlabel('Altitude [km]')
+    #if userInput.get('saveData'):
+    #    plt.savefig(userInput.get('savePath') + "/" + fileName[0:-4] + "_power_surface_3D.png")
+    #if userInput.get('showPlots'):
+    #    plt.show()
+    #plt.close()
+
 ########## USER INPUT SECTION ##########
 def getUserInputFile(prompt):
     print(prompt)
@@ -594,7 +664,7 @@ def invertWaveletTransform(region, wavelets):
     return results  # Dictionary of trimmed inverted U, V, and T
 
 
-def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelength):
+def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelength, identifier):
 
     # Get index across the altitudes of the wave, for use later
     waveAlts = np.nonzero(region.sum(axis=0))
@@ -602,7 +672,7 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     # Calculate the wind variance of the wave
     windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2
 
-    # Get rid of values below half-power, per Murphy
+    # Get rid of values below half-power, per Murphy (2014)
     uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
@@ -627,20 +697,21 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     Q = np.mean(2 * uTrim * vHilbert)
     degPolar = np.sqrt(D ** 2 + P ** 2 + Q ** 2) / I
 
+    # Check the covariance to perform additional filtering
+
     # Tests, I need to figure out why these make sense
     if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
         return {}
 
     theta = 0.5 * np.arctan2(P, D)  # What is arctan2() and what makes it different from arctan()?
-    # Method from Tom's matlab code, replaced by one below from Murphy (2014)
-    axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
 
 
     # Classic 2x2 rotation matrix
     rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
     uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
 
-    #axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])  # Changed from Tom's code to match Murphy Table 1
+    #Alternative method that yields very similar results is axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
+    axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])  # From Murphy (2014) Table 1, also referenced in Zink & Vincent
 
     # Make hodograph plot, for debugging
     #plt.scatter(uTrim, vTrim, marker='o', color='b')
@@ -663,11 +734,30 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     if not np.sqrt(bvMean) > intrinsicF > coriolisF:
         return {}
 
+    plt.figure()
+    plt.scatter(uTrim, vTrim, c='blue')
+    plt.xlabel("Zonal windspeed [m/s]")
+    plt.ylabel("Meridional windspeed [m/s]")
+    plt.title("Radiosonde Data Collected by MSGC, 2020")
+    plt.savefig("C:/Users/12069/Documents/Eclipse2020/Presentation/Python Images/Comparison Hodographs/" +
+                identifier + "_Peak_" + str(data['Alt'][waveAltIndex]) + "_" + str(wavelength) + "_ContourMethod.png")
+    plt.close()
+
+
+    # Values that I should output are:
+    # Intrinsic frequency
+    # Ground based frequency
+    # Periods for above frequencies
+    # Propagation direction
+    # Altitude
+    # Horizontal phase speed
+    # Vertical wavelength
+
     # Vertical wavenumber [1/m]
     m = 2 * np.pi / wavelength
     # Horizontal wavenumber [1/m]
     kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvMean) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
-    # I don't really know [m/s]
+    # Intrinsic vertical wave velocity [m/s]
     intrinsicVerticalGroupVel = - (1 / (intrinsicF * m)) * (intrinsicF ** 2 - coriolisF ** 2)
     # Same [1/m]
     #zonalWaveNumber = kh * np.sin(theta)
