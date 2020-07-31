@@ -31,26 +31,39 @@ for file in os.listdir( userInput.get('dataSource') ):
     if data.empty:
         continue
 
-    # Get the stuff... comment better later!
+    # Perform the continuous wavelet transform to get the power surface
     wavelets = waveletTransform( data, spatialResolution, 'MORLET')  # Use morlet wavelet
 
 
-    # Find local maximums in power surface
+    # Find local maxima in power surface
     peaks = findPeaks( wavelets.get('power') )
+
+    # Filter local maxima to within cone of influence, per Torrence & Compo (1998)
+    # Check to see if this is done by Zink & Vincent or Murphy et al
+    peakRemovalMask = np.zeros(wavelets.get('power').shape, dtype=bool)
+    for peak in peaks:
+        if wavelets.get('wavelengths')[peak[0]] > wavelets.get('coi')[peak[1]]:
+            peakRemovalMask[peak[0], peak[1]] = True
+    peaks = removePeaks(peakRemovalMask, peaks)
+
     numPeaks = len(peaks)  # To keep track of progress
     peaksToPlot = peaks.copy()  # Keep peaks for plot at end
-    colorsToPlot = np.array(['blue'] * peaks.shape[0])  # Keep track for plots at end
+    colorsToPlot = np.array(['blue'] * len(peaks))  # Keep track for plots at end
+
+
 
     yScale = wavelets.get('wavelengths')
     # plt.imshow(wavelets.get('power'), extent=extents, origin='lower')
     plt.contourf(data['Alt'] / 1000, yScale, wavelets.get('power'), levels=50)
     cb = plt.colorbar()
     plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, yScale[peaksToPlot.T[0]], c='red', marker='.')
+    plt.plot(data['Alt']/1000, wavelets.get('coi')[0:-1], color='blue')
     # plt.contour(plotter, colors='red', levels=[0.5])
     # ax.set_aspect('auto')
     plt.yscale("log")
     plt.xlabel("Altitude [km]")
     plt.ylabel("Vertical Wavelength [m]")
+    plt.ylim(yScale[0], yScale[-1])
     plt.title("Power Surface with Local Maxima")
     cb.set_label("Power [m^2/s^2]")
     plt.savefig("C:/Users/12069/Documents/Eclipse2020/Presentation/Python Images/Power_Surface_Example.png")
@@ -58,10 +71,14 @@ for file in os.listdir( userInput.get('dataSource') ):
     # Numpy array for plotting purposes
     plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
 
-    trimIndex = np.arange(0, len(data['Time']), 50)  # Only save 1/50 of the data for plotting, the detail isn't all needed
+    # Index to only save 1/50 of the data for plotting, the detail isn't all needed
+    trimIndex = np.arange(0, len(data['Time']), 50)
     waves = {
         'waves': {},  # Empty dictionary, to contain wave characteristics
-        'flightPath': {'time': np.array(data['Time'][trimIndex]).tolist(), 'alt': np.array(data['Alt'][trimIndex]).tolist()}  # Flight path for plotting results
+        'flightPath': {  # Flight path for plotting results
+            'time': np.array(data['Time'][trimIndex]).tolist(),
+            'alt': np.array(data['Alt'][trimIndex]).tolist()
+        }
     }
     waveCount = 1  # For naming output waves
 

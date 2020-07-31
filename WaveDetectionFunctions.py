@@ -14,169 +14,6 @@ from skimage.measure import find_contours  # Find contour levels around local ma
 from scipy.ndimage.morphology import binary_fill_holes  # Then fill in those contour levels
 from scipy.signal import argrelextrema
 
-########## PBL AND STABILITY CALCULATIONS ##########
-
-def pblRI(vpt, u, v, hi):
-    # The RI method looks for a Richardson number between 0 and 0.25 above a height of 800 and below a height of 3000
-    # The function will then return the highest height of a "significant RI"
-    # NOTE: these boundaries will need to be changed if you are taking data from a night time flight,
-    # where the PBL can be lower than 800m
-    # or a flight near the equator where the PBL can exceed a height of 3000m
-
-    # Support for this method and the equation used can be found at the following link:
-    # https://resy5.iket.kit.edu/RODOS/Documents/Public/CD1/Wg2_CD1_General/WG2_RP97_19.pdf
-    # https://watermark.silverchair.com/1520-0469(1979)036_0012_teorwa_2_0_co_2.pdf?token=AQECAHi208BE49Ooan9kkhW_Ercy7Dm3ZL_9Cf3qfKAc485ysgAAAsMwggK_BgkqhkiG9w0BBwagggKwMIICrAIBADCCAqUGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMtQBGOhb8zchwxViIAgEQgIICduC_f9w94ccDO9Nz1u73Ti7uOmXyjo_dLzL6LsXhu0-0uMAxTRsrPuPu_aCgyt4vyLVccC1OeRc9KR5npTEGstzVFFZs-vFNNs8Bl78f1K5jOhlAT9DYH3oSp3vdEM763kaZDV_1mc-8QzJORohbeGB1YOu4TbqYd70ZoJCS59yKO7emrSfcVVdQIWNOQ6PoT4ONeDowOCXCIgv4WBO-ul9fKAuA217EvXIh3-5o_SGj-SuMO30ktr8htOstvD_dC36eB3efxJ9l2MyDwvurUAO4CfJBgpaCKAg4af8LeljpmlXbFgkB7_jQyVXYvdfZNxvjAmp72Nbn6x_qjRc3TMhrhzw4R0ZtwjF9IjfDz-zolAwDPZ_PALKP-HE-M-Zi7q9hRd6XxDsjVOINTpZ07apgpT0ssX58uU3aPAiWDZnEInwz2-r_b_6KJHABRFWj4GYmW34v35nQz_xCo20S3MRQ-Lh7CiiwIAvkchNIfpScUI11Kz7Hd8gLsVqQ7r8fp4iWbgc4NEkS2gRkj8XEIqdvvFyCLLPo6bs_20iVtyEuGuwWQM3fYbpiS38iqth9LFcx7suDYUbMd1GbrYR3gdbvr9KKLohN6-rCJV-8rxIDOqraPxewIJyOckPHEaQ5Ek1Q1FEahweLE3HDgz93DnDQHoHYrmDU0gmsvDRqtxVRnqVf95d3V5DQNom8MFPEZiRdv7Vb8-2BQq_GMYEXZrv0FeKVr40HLSRy5Kc4qXZBR97XjN04AEyJ-umhyrb5DuzQdksk2T5WTXIIlx3DmZXLYY5Ond0cXDhOjGh7A6sPiJ2jVPTEzwSdwXUtpnMdxdpsFX6GhQ
-
-    g = 9.81  # m/s/s
-    ri = (((vpt - vpt[0]) * hi * g) / (vpt[0] * (u ** 2 + v ** 2)))
-    #  Check for positive RI <= 0.25 and height between 800 and 3000 meters
-    index = [ 0 <= a <= 0.25 and 800 <= b <= 3000 for a, b in zip(ri, hi)]
-
-
-    #plt.plot(ri, hi)
-    #plt.xlim(-100, 100)
-    #plt.plot([0.25,0.25], [0,30000])
-    #plt.show()
-
-    if np.sum(index) > 0:  # If there are results, return them
-        return np.max( hi[index] )
-
-    # Otherwise, interpolate to find height
-
-    # Trim to range we're interested in
-    index = [800 <= n <= 3000 for n in hi]
-    hi = hi[index]
-    ri = ri[index]
-
-    # Interpolate, returning either 800 or 3000 if RI doesn't cross 0.25
-    return np.interp(0.25, ri, hi)
-
-
-def pblPT(hi, pot):
-    # The potential temperature method looks at a vertical gradient of potential temperature, the maximum of this gradient
-    # ie: Where the change of potential temperature is greatest
-    # However, due to the nature of potential temperature changes you will need to interpret this data from the graph
-    # produced by this function. In this case you are looking for a maxium on the POSITIVE side of the X=axis around the
-    # height that makes sense for your predicted PBL height
-    # NOTE: arrays at the top of the function start at index 10 to avoid noise from the lower indexes.
-
-    # Support for this method can be found at the following link:
-    # https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2009JD013680
-
-    # High and low height limits for the PBL
-    topH = 2000
-    lowH = 800
-
-    # Trim potential temperature and height to within specified heights
-    height = [i for i in hi if lowH <= i <= topH]
-    pt = [p for p, h in zip(pot, hi) if lowH <= h <= topH]
-
-    dp = np.gradient(pt, height)  # creates a gradient of potential temperature and height
-
-    #plt.plot(dp, height3k)  # creates the plot you will need to read to determine the PBL Height
-    #plt.ylim(800, 2000)  # Change this if there is reason to believe PBL may be higher than 2000, or lower than 800
-    #plt.xlabel("Gradient of PT")
-    #plt.ylabel("Height above ground in meters")
-    #plt.show()
-    #return getUserInputNum("Please enter the PBL height according to this plot:")
-
-    # Return height of maximum gradient
-    return np.array(height)[dp == np.max(dp)]
-
-
-def pblSH(hi, rvv):
-    # The specific humidity method looks at a vertical gradient of specific humidity, the minimum of this gradient
-    # ie: where the change in gradient is the steepest in negative direction
-    # However, due to the nature of specific humidity changes you will need to interpret this data from the graph
-    # produced by this function. In this case you are looking for a maxium on the NEGATIVE side of the X=axis around the
-    # height that makes sense for your predicted PBL height
-    # NOTE: arrays at the top of the function start at index 10 to avoid noise from the lower indexes.
-
-    # Support for this method can be found at the following link:
-    # https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2009JD013680
-
-    q = rvv / (1 + rvv)  # equation for specific humidity
-
-    # High and low height limits for the PBL
-    topH = 2000
-    lowH = 800
-
-    # Trim potential temperature and height to within specified heights
-    height = [i for i in hi if lowH <= i <= topH]
-    q = [q for q, h in zip(q, hi) if lowH <= h <= topH]
-
-    dp = np.gradient(q, height)  # creates a gradient of potential temperature and height
-
-    #plt.plot(dp, height3k)  # creates the plot you will need to read to determine the PBL Height
-    #plt.ylim(800, 2000)  # Change this if there is reason to believe the PBL may be higher than 2000 or lower than 800
-    #plt.xlabel("Gradient of Specific Humidity")
-    #plt.ylabel("Height above ground in meters")
-    #plt.show()
-    #return getUserInputNum("Please enter the PBL height according to this plot:")
-
-    # Return height at maximum gradient
-    return np.array(height)[dp == np.max(dp)]
-
-
-def pblVPT(vpt, hi):
-    # The Virtual Potential Temperature (VPT) method looks for the height at which VPT is equal to the VPT at surface level
-    # NOTE: The VPT may equal VPT[0] in several places, so the function is coded to return the highest height where
-    # these are equal
-
-    # Supoort for this method can be found at the following link:
-    # https://www.mdpi.com/2073-4433/6/9/1346/pdf
-
-    roots = np.interp(vpt[0], vpt, hi)  # Finds heights at which
-
-    return roots
-
-
-def layerStability(hi, pot):
-    # This function looks through potential temperature data to determine layer stability into 3 catergories
-    # NOTE: It is best to choose the higest PBL calculation unless the methods produce PBL Heights more than 300m
-    # apart. Also, when a stable boundary layer is detected, reject a PBL that is above 2000m, as these are often
-    # night-time layers and a PBL near 2000m does not make sense
-
-    ds = 1
-    try:
-        diff = [pot[i] for i in range(len(pot)) if hi[i] >= 150]
-        diff = diff[0] - pot[0]
-    except:
-        return "Unable to detect layer stability, possibly due to corrupt data"
-
-    if diff < -ds:
-        return "Detected convective boundary layer"
-    elif diff > ds:
-        return "Detected stable boundary layer"
-    else:
-        return "Detected neutral residual layer"
-
-
-def drawPlots(alt, t, td, pblHeightRI, pblHeightVPT):  # , pblHeightPT, pblHeightSH):
-    print("Displaying data plots")
-
-    # Plot radiosonde path
-    #plt.plot(data['Long.'], data['Lat.'])
-    plt.ylabel("Latitude [degrees]")
-    plt.xlabel("Longitude [degrees]")
-    plt.title("Radiosonde Flight Path")
-    plt.show()
-
-    # Plot pbl estimates
-    pblHeightRI += alt[0]  # Convert height to altitude
-    # pblHeightSH += alt[0]
-    plt.plot(t, alt, label="Temperature")
-    plt.plot(td, alt, label="Dewpoint")
-    # plt.plot(plt.get_xlim(),[pblHeightPT] * 2, label="PT Method")
-    plt.plot(plt.xlim(), [pblHeightRI] * 2, label="RI Method")
-    plt.plot(plt.xlim(), [pblHeightVPT] * 2, label="VPT Method")
-    plt.axis([-80, 20, 1000, 3500])
-    # plt.plot(t,[pblHeightSH] * 2, label="SH Method")
-    plt.title('PBL Calculations')
-    plt.xlabel("Temperature [deg. C]")
-    plt.ylabel("Altitude [m]")
-    plt.legend()
-    plt.show()
 
 
 def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToPlot, colorsToPlot):
@@ -194,7 +31,7 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     # OUTPUTS: Returns nothing, prints to console and saves files and/or shows images
 
     # If neither saving nor showing the plots, then don't bother making them
-    if not userInput('saveData') and not userInput('showPlots'):
+    if not userInput.get('saveData') and not userInput.get('showPlots'):
         return
 
     # Console output to keep the user up to date
@@ -248,44 +85,88 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     #    plt.show()
     #plt.close()
 
+
 ########## USER INPUT SECTION ##########
+
+
 def getUserInputFile(prompt):
+    # FUNCTION PURPOSE: Get a valid path (relative or absolute) to a directory from user
+    #
+    # INPUTS:
+    #   prompt: String that is printed to the console to prompt user input
+    #
+    # OUTPUTS:
+    #   userInput: String containing path to an existing directory
+
+    # Print the prompt to console
     print(prompt)
+
+    # userInput starts as empty string
     userInput = ""
+
+    # While userInput remains empty, get input
     while not userInput:
         userInput = input()
+
+        # If input isn't a valid directory, set userInput to empty string
         if not os.path.isdir(userInput):
+            # Console output to let user know requirements
             print("Please enter a valid directory:")
             userInput = ""
+
+    # Now that the loop has finished, userInput must be valid, so return
     return userInput
 
+
 def getUserInputTF(prompt):
+    # FUNCTION PURPOSE: Get a valid boolean (True or False) from user
+    #
+    # INPUTS:
+    #   prompt: String that is printed to the console to prompt user input
+    #
+    # OUTPUTS:
+    #   userInput: Boolean containing the user's answer to 'prompt'
+
+    # Print the prompt to console, followed by the user's input options ("Y" or "N")
     print(prompt+" (Y/N)")
+
+    # userInput starts as empty string
     userInput = ""
+
+    # While userInput remains empty, get input
     while not userInput:
         userInput = input()
+        # If input isn't either "Y" or "N", set userInput to empty string
         if lower(userInput) != "y" and lower(userInput) != "n":
             print("Please enter a valid answer (Y/N):")
+            # Console output to let user know requirements
             userInput = ""
+
+    # Now that the loop has finished, return True for "Y" and False for "N"
     if lower(userInput) == "y":
         return True
     else:
         return False
 
-def getUserInputNum(prompt):
-    print(prompt)
-    userInput = ""
-    while not userInput:
-        userInput = input()
-        if not userInput.isdigit():
-            print("Please enter a valid integer:")
-            userInput = ""
-    return int(userInput)
 
 def getAllUserInput():
+    # FUNCTION PURPOSE: Get all required user input to begin running the program
+    #
+    # INPUTS: None
+    #
+    # OUTPUTS:
+    #   results: Dictionary containing the user answers to the 3 or 4 questions below
+
+    # Get the directory containing the data for analysis
     dataSource = getUserInputFile("Enter path to data input directory: ")
+
+    # Get a boolean value for whether to display the generated plots
     showPlots = getUserInputTF("Do you want to display plots for analysis?")
+
+    # Get a boolean value for whether to save calculated data
     saveData = getUserInputTF("Do you want to save the output data?")
+
+    # If saving the data, get the directory in which to save it
     if saveData:
         savePath = getUserInputFile("Enter path to data output directory: ")
     else:
@@ -297,7 +178,11 @@ def getAllUserInput():
     print("Path to input data: "+dataSource+"/")
     print("Display plots: "+str(showPlots))
     print("Save data: "+str(saveData))
-    print("Path to output data: "+savePath+"/\n")
+    if saveData:
+        print("Path to output data: "+savePath+"/\n")
+    else:
+        # Extra line for improved readability
+        print()
 
     # Build a dictionary to return values
     results = {
@@ -308,11 +193,26 @@ def getAllUserInput():
     if saveData:
         results.update( {'savePath': savePath })
 
+    # Return the resulting dictionary
     return results
+
 
 ########## DATA INPUT SECTION ##########
 
 def cleanData(file, path):
+    # FUNCTION PURPOSE: Read a data file, and if the file contains GRAWMET profile data,
+    #                   then clean the data and return the results
+    #
+    # INPUTS:
+    #   file: The filename of the data file to read
+    #   path: The path (absolute or relative) to the file
+    #
+    # OUTPUTS:
+    #   data: Pandas DataFrame containing the time [s], altitude [m], temperature [deg C],
+    #           pressure [hPa], wind speed [m/s], wind direction [deg], latitude [decimal deg],
+    #           and longitude [decimal deg] of the radiosonde flight
+
+
     # If file is not a txt file, end now
     if not file.endswith(".txt"):
         return pd.DataFrame()  # Empty data frame means end analysis
@@ -379,38 +279,72 @@ def cleanData(file, path):
 
     return data  # return cleaned pandas data frame
 
+
 def readFromData(file, path):
-    # Open and investigate the file
+    # FUNCTION PURPOSE: Find launch time and pbl height in a profile file, or return default
+    #                   values if not found. In particular, PBL height has to be written into
+    #                   the profile by hand or by running companion software (CalculatePBL.py)
+    #
+    # INPUTS:
+    #   file: The filename of the data file to read
+    #   path: The path (absolute or relative) to the file
+    #
+    # OUTPUTS:
+    #   launchDateTime: datetime.datetime object containing the UTC date and time of launch
+    #   pblHeight: Number in meters representing PBL height
+
+
 
     # Establish default values, in case not contained in profile
     launchDateTime = datetime.datetime.now()
     pblHeight = 1500
 
+    # Open and investigate the file
     f = open(os.path.join(path, file), 'r')
     for line in f:  # Iterate through file, line by line
 
+        # If line has expected beginning, try to get datetime from file
         if line.rstrip() == "Flight Information:":
             try:
                 dateTimeInfo = f.readline().split()
                 dateTimeInfo = ' '.join(dateTimeInfo[2:6] + [dateTimeInfo[8]])
                 launchDateTime = datetime.datetime.strptime(dateTimeInfo, '%A, %d %B %Y %H:%M:%S')
             except:
+                # If an error is encountered, print a statement to the console and continue
                 print("Error reading flight time info, defaulting to present")
 
+        # If line has expected beginning, try to get PBL info
         if line.rstrip() == "PBL Information:":
             try:
                 pblHeight = float(f.readline().split()[3])
             except:
+                # If an error is encountered, print a statement to the console and continue
                 print("Error reading flight PBL info, defaulting to 1500 meters")
 
     f.close()  # Need to close opened file
 
+    # Return values from profile, or default values if not found
     return launchDateTime, pblHeight
+
 
 ########## PERFORMING ANALYSIS ##########
 
 
 def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
+    # FUNCTION PURPOSE: Interpolate to create a Pandas DataFrame for the flight as a uniform
+    #                   spatial grid, with datetime.datetime objects in the time column
+    #
+    # INPUTS:
+    #   data: Pandas DataFrame containing flight information
+    #   spatialResolution: Desired length (in meters) between rows of data, must be a positive integer
+    #   pblHeight: The height above ground in meters of the PBL
+    #   launchDateTime: A datetime.datetime object containing the launch date and time in UTC
+    #
+    # OUTPUTS:
+    #   data: Pandas DataFrame containing the time [s], altitude [m], temperature [deg C],
+    #           pressure [hPa], wind speed [m/s], wind direction [deg], latitude [decimal deg],
+    #           and longitude [decimal deg] of the radiosonde flight
+
 
     # First, filter data to remove sub-PBL data
     data = data[ (data['Alt'] - data['Alt'][0]) >= pblHeight]
@@ -423,20 +357,28 @@ def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
     data = pd.merge(data, heightIndex, how="right", on="Alt")
     # Sort data by height for interpolation
     data = data.sort_values(by=['Alt'])
+
     # Use pandas built in interpolate function to fill in NAs
     # Linear interpolation appears the most trustworthy, but more testing could be done
-    missingDataLimit = 999  # If 1 km or more missing data in a row, leave the NAs
+    missingDataLimit = 999  # If 1 km or more missing data in a row, leave the NAs in place
     data = data.interpolate(method="linear", limit=missingDataLimit)
 
-    if data.isnull().values.any():  # More than 1000 meters missing data
+    # If NA's remain, missingDataLimit was exceeded
+    if data.isnull().values.any():
+        # Print event to console
         print("Found more than "+str(missingDataLimit)+" meters of consecutive missing data, quitting analysis.")
+        # Return empty data frame, which means quit analysis
         return pd.DataFrame()
 
-    data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
-    keepIndex = np.arange(0, len(data['Alt']), spatialResolution)  # Index altitude by spatialRes
-    data = data.iloc[keepIndex, :]  # Keep data according to index
-    data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
+    data.reset_index(drop=True, inplace=True)  # Reset data frame index to [0,1,2,...,nrow]
 
+    # Create index according to desired spatial resolution
+    keepIndex = np.arange(0, len(data['Alt']), spatialResolution)
+    data = data.iloc[keepIndex, :]  # Keep data according to index, lose the rest of the data
+
+    data.reset_index(drop=True, inplace=True)  # Reset data frame index to [0,1,2,...,nrow]
+
+    # Convert times from seconds since launch to UTC datetime.datetime objects
     times = data['Time'].copy()  # Make a copy of the column to stop warnings about inadvertent copying
     for n in range(len(times)):  # Iterate through time, turning times into datetime objects
         times[n] = launchDateTime + datetime.timedelta(seconds=float(times[n]))  # Add flight time to launch start
@@ -446,8 +388,22 @@ def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
 
 
 def waveletTransform(data, spatialResolution, wavelet):
+    # FUNCTION PURPOSE: Perform the continuous wavelet transform on wind speed components and temperature
+    #
+    # INPUTS:
+    #   data: Pandas DataFrame containing flight information
+    #   spatialResolution: Length (in meters) between rows of data
+    #   wavelet: String containing the name of the wavelet to use for the transformation. Based on
+    #               Zink & Vincent (2001) and Murphy et. al (2014), this should be 'MORLET'
+    #
+    # OUTPUTS:
+    #   results: Dictionary containing the power surface (|U|^2 + |V|^2), the wavelet transformed
+    #               surfaces U, V, and T (zonal wind speed, meridional wind speed, and temperature
+    #               in celsius), the wavelet scales and their corresponding fourier wavelengths,
+    #               the cone of influence and the reconstruction constant from Torrence & Compo (1998)
 
-    # u and v (east & north?) components of wind speed
+
+    # u and v (zonal & meridional) components of wind speed
     u = -data['Ws'] * np.sin(data['Wd'] * np.pi / 180)
     v = -data['Ws'] * np.cos(data['Wd'] * np.pi / 180)
 
@@ -462,29 +418,30 @@ def waveletTransform(data, spatialResolution, wavelet):
     rMean = pd.Series(data['T']).rolling(window=N, min_periods=int(N / 2), center=True).mean()
     t = data['T'] - rMean
 
-    # In preperation for wavelet transformation, define variables
+    # In preparation for wavelet transformation, define variables
     # From Torrence & Compo (1998)
     padding = 1  # Pad the data with zeros to allow convolution to edge of data
-    scaleResolution = 1/1000  # This is a scale thingamobober
-    smallestScale = 100  # This number is the smallest wavelet scale
+    scaleResolution = 0.125/8  # This controls the spacing in between scales
+    smallestScale = 2 * spatialResolution  # This number is the smallest wavelet scale
     howManyScales = 10/scaleResolution  # This number is how many scales to compute
     # Check Zink & Vincent section 3.2 par. 1 to see their scales/wavelengths
 
-    # Lay groundwork for inversions, outside of local max. loop
-    # Derived from Torrence & Compo, 1998, Equation 11 and Table 2
+    # Lay groundwork for inversions, outside of looping over local max. in power surface
+    # Derived from Torrence & Compo (1998) Equation 11 and Table 2
     constant = scaleResolution * np.sqrt(spatialResolution) / (0.776 * np.pi**0.25)
 
-    # Now, do the actual wavelet transform
+    # Now, do the actual wavelet transform using library from Torrence & Compo (1998)
     print("Performing wavelet transform on U... (1/3)", end='')  # Console output, to be updated
-    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
     print("\rPerforming wavelet transform on V... (2/3)", end='')  # Update to keep user informed
-    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
-    print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console update for wavelet transform
-    coefT, periods, scales, coi = continuousWaveletTransform(t, spatialResolution, pad=padding, dj=scaleResolution, J1=howManyScales, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console output for wavelet transform
+    coefT, periods, scales, coi = continuousWaveletTransform(t, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
 
 
     # Power surface is sum of squares of u and v wavelet transformed surfaces
     power = abs(coefU) ** 2 + abs(coefV) ** 2  # abs() gets magnitude of complex number
+
 
     # Divide each column by sqrt of the scales so that it doesn't need to be done later to invert wavelet transform
     for col in range(coefU.shape[1]):
@@ -499,6 +456,7 @@ def waveletTransform(data, spatialResolution, wavelet):
         'coefT': coefT,
         'scales': scales,
         'wavelengths': periods,
+        'coi': coi,
         'constant': constant
     }
 
@@ -626,7 +584,7 @@ def removePeaks(region, peaks):
         if region[peaks[n][0], peaks[n][1]]:  # If peak in region,
             toRem.append(n)  # add peak to removal index
     peaks = [ value for (i, value) in enumerate(peaks) if i not in set(toRem) ]  # Then remove those peaks from peaks list
-    return peaks  # Return shortened list of peaks
+    return np.array(peaks)  # Return shortened list of peaks
 
 
 def updatePlotter(region, plotter):
