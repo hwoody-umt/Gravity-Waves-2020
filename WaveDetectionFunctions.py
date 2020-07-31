@@ -25,7 +25,7 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     #   wavelets: Dictionary containing power surface and corresponding wavelengths
     #   altitudes: Pandas DataFrame column with altitudes (IN KM) corresponding to the power surface
     #   plotter: Boolean mask identifying traced regions on power surface
-    #   peaksToPlot: Numpy 2d array containing peaks, e.g. [ [x1, y1], [x2, y2], ... [xN, yN] ]
+    #   peaksToPlot: Numpy 2d array containing peaks, e.g. [ [row1, col1], [row2, col2], ... [rowN, colN] ]
     #   colorsToPlot: Numpy array of strings corresponding to each peak, e.g. [ "color1", "color2", ... "colorN" ]
     #
     # OUTPUTS: Returns nothing, prints to console and saves files and/or shows images
@@ -50,10 +50,13 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     plt.contour(altitudes, yScale, plotter, colors='red', levels=[0.5])
     # Make a scatter plot of the identified peaks, coloring them according to which ones were confirmed as waves
     plt.scatter(altitudes[peaksToPlot.T[1]], yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
+    # Plot the cone of influence in black
+    plt.plot(altitudes, wavelets.get('coi'), color='black')
     # Set the axis scales, labels, and titles
     plt.yscale("log")
     plt.xlabel("Altitude [km]")
     plt.ylabel("Vertical Wavelength [m]")
+    plt.ylim(yScale[0], yScale[-1])
     plt.title("Power surface, including traced peaks")
     cb.set_label("Power [m^2/s^2]")
 
@@ -438,10 +441,8 @@ def waveletTransform(data, spatialResolution, wavelet):
     print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console output for wavelet transform
     coefT, periods, scales, coi = continuousWaveletTransform(t, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
 
-
     # Power surface is sum of squares of u and v wavelet transformed surfaces
     power = abs(coefU) ** 2 + abs(coefV) ** 2  # abs() gets magnitude of complex number
-
 
     # Divide each column by sqrt of the scales so that it doesn't need to be done later to invert wavelet transform
     for col in range(coefU.shape[1]):
@@ -456,27 +457,30 @@ def waveletTransform(data, spatialResolution, wavelet):
         'coefT': coefT,
         'scales': scales,
         'wavelengths': periods,
-        'coi': coi,
-        'constant': constant
+        'constant': constant,
+        'coi': coi[0:len(data['Alt'])]  # Fix COI so that it has the same length as data
     }
 
     return results  # Dictionary of wavelet-transformed surfaces
 
 
 def findPeaks(power):
+    # FUNCTION PURPOSE: Find the local maxima in the give power surface
+    #
+    # INPUTS:
+    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #
+    # OUTPUTS:
+    #   peaks: Numpy 2d array containing peak coordinates, e.g. [ [row1, col1], [row2, col2], ... [rowN, colN] ]
+
 
     # UI console output to keep user informed
     print("\nSearching for local maxima in power surface", end='')
 
     # Find and return coordinates of local maximums
-    cutOff = 0.05  # Disregard maximums less than cutOff
-    margin = 10  # Disregard maximums less than margin from image border, must be pos integer
+    cutOff = 0.05  # Disregard maximums less than cutOff * max power, empirically determined via trial & error
     # Finds local maxima based on cutOff, margin
-    peaks = peak_local_max(power, threshold_rel=cutOff, exclude_border=margin)
-
-    # Currently debugging and testing this sort
-    # Update 7/23, not needed for now
-    #peaks = [x for _, x in sorted(zip(power[peaks[:,0], peaks[:,1]], peaks))]
+    peaks = peak_local_max(power, threshold_rel=cutOff)
 
     print()  # Newline for next console output
 
@@ -484,110 +488,150 @@ def findPeaks(power):
 
 
 def displayProgress(peaks, length):
-    # Console output to keep user up to date
+    # FUNCTION PURPOSE: Display console output detailing progress analyzing local maxima
+    #
+    # INPUTS:
+    #   peaks: Numpy 2d array containing list of peaks yet to be analyzed
+    #   length: Original number of peaks to be analyzed
+    #
+    # OUTPUTS: None
+
+    # Print progress to the console, beginning with carriage return (\r) and ending without newline
     print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
 
 
 def findPeakSquare(power, peak):
+    # FUNCTION PURPOSE: Trace a rectangle around a local maximum in the power surface,
+    #                   following the method of Zink & Vincent (2001), which iterates
+    #                   in four directions until either 25% of peak power is reached,
+    #                   of the power surface begins increasing.
+    #
+    # INPUTS:
+    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #   peak: Numpy array containing row and column coordinates of local maximum in power surface
+    #
+    # OUTPUTS:
+    #   region: Boolean mask the size & shape of power that is True inside rectangle and false elsewhere
+
     # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
 
+    # Per Zink & Vincent (2001), the limit is 25% of peak power
     powerLimit = 0.25 * power[peak[0], peak[1]]
 
+    # Get the row and column of the peak
     row = power[peak[0], :]
     col = power[:, peak[1]]
 
+    # Create an array with coordinates of local minima on the row
     rowMins = np.array(argrelextrema(row, np.less))
+    # Append all coordinates where the row is less than the power limit
     rowMins = np.append(rowMins, np.where(row <= powerLimit))
+    # Add the peak itself, as well as the boundaries in case peak is near the edge
     rowMins = np.sort(np.append(rowMins, [0, peak[1], power.shape[1]-1]))
+    # Get the two values on either side of the peak in the sorted array of indices
     cols = np.arange( rowMins[np.where(rowMins == peak[1])[0]-1], rowMins[np.where(rowMins == peak[1])[0]+1] + 1).tolist()
 
+    # Repeat for the column, to get the boundaries for the rows
     colMins = np.array(argrelextrema(col, np.less))
     colMins = np.append(colMins, np.where(col <= powerLimit))
     colMins = np.sort(np.append(colMins, [0, peak[0], power.shape[0]-1]))
     rows = np.arange(colMins[np.where(colMins == peak[0])[0] - 1][0], colMins[np.where(colMins == peak[0])[0] + 1][0] + 1).tolist()
 
+    # Set the boolean mask to true inside those boundaries
     region[np.ix_(rows, cols)] = True
 
     return region
 
 
 def findPeakRegion(power, peak):
+    # FUNCTION PURPOSE: Trace a contour line around a local maximum in the power surface,
+    #                   possibly following Murphy (2014). The paper is unclear, and I still
+    #                   need to investigate the IDL code to find the exact method.
+    #
+    # INPUTS:
+    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #   peak: Numpy array containing row and column coordinates of local maximum in power surface
+    #
+    # OUTPUTS:
+    #   region: Boolean mask the size & shape of power that is True inside contour and false elsewhere
+
     # Create boolean mask, initialized as False
     region = np.zeros(power.shape, dtype=bool)
+
+    # If for some reason this method can't isolate a region surrounding the peak,
+    # set the peak itself to True so that it will be removed from list of peaks
     region[peak[0], peak[1]] = True
 
     # Find cut-off power level, based on height of peak
-    relativePowerLevel = 0.65  # Empirically determined parameter, to be adjusted
-    absolutePowerLevel = power[peak[0], peak[1]] * relativePowerLevel
-    # Find all the contours at cut-off level
-    contours = find_contours(power, absolutePowerLevel)
+    # No one level works for all peaks, so iterate through different contours until one works
+    relativePowerLevels = np.arange(0.55, 1.00, 0.05)  # Try levels 55%, 60%, 65%, ... 90%, 95%
+    absolutePowerLevels = power[peak[0], peak[1]] * relativePowerLevels
 
-    # Loop through contours to find the one surrounding the peak
-    for contour in contours:
+    for level in absolutePowerLevels:
 
-        # If the contour runs into multiple edges, skip as it's not worth trying
-        if contour[0, 0] != contour[-1, 0] and contour[0, 1] != contour[-1, 1]:
-            continue
+        # Find all the contours at cut-off level
+        contours = find_contours(power, level)
 
-        # Use matplotlib.path.Path to create a path
-        p = path.Path(contour, closed=True)
-        # Check to see if the peak is inside the closed loop of the contour path
-        if p.contains_points([[peak[0], peak[1]]]):
+        # Loop through contours to find the one surrounding the peak
+        for contour in contours:
 
-            # If contour is not closed (includes an edge), close it manually
-            if not (contour[0, :] == contour[-1, :]).all():  # Doesn't end where it starts, must be open
+            # If the contour runs into multiple edges, skip as it's not worth trying
+            if contour[0, 0] != contour[-1, 0] and contour[0, 1] != contour[-1, 1]:
+                continue
 
-                # Get all points in between ends of contour
+            # Use matplotlib.path.Path to create a path
+            p = path.Path(contour)
 
-                # Assume positive directions for x and y iterations
-                rowDir = 0.25
-                colDir = 0.25
-                # If not, change step to a negative
-                if contour[0, 0] < contour[-1, 0]:
-                    rowDir = -0.25
-                if contour[0, 1] < contour[-1, 1]:
-                    colDir = -0.25
+            # Check to see if the peak is inside the closed loop of the contour path
+            if p.contains_points([[peak[0], peak[1]]]):
 
-                # List the rows and columns to iterate over
-                rows = np.arange(contour[-1, 0], contour[0, 0] + rowDir, rowDir)
-                cols = np.arange(contour[-1, 1], contour[0, 1] + colDir, colDir)
+                # If it is, set the boundary path to True
+                region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
 
-                # Finally, put index in proper format [ [row, col], [row2, col2] ]
-                index = [[x, y] for x in rows for y in cols]
-                index = np.array(index)
+                # Then fill in the contour to create mask surrounding peak
+                region = binary_fill_holes(region)
 
-                # Add all points onto the end of contour
-                contour = np.concatenate((contour, index), axis=0)
+                # The method is now done, so return region
+                return region
 
-            # If it is, set the boundary path to True
-            region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
-
-            # Then fill in the contour to create mask surrounding peak
-            region = binary_fill_holes(region)
-
-        # The method is now done, so return region
-        return region
-
-    # If for some reason the method couldn't isolate a region surrounding the peak,
-    # set the peak itself to True so that it will be removed from list of peaks
-    region[peak[0], peak[1]] = True
-    # And return the almost empty mask
+    # If this method couldn't find a contour that surrounded the peak,
+    # then return the boolean mask that is False except for the peak itself
     return region
 
 
 def removePeaks(region, peaks):
+    # FUNCTION PURPOSE: Remove local maxima that are currently traced in 'region' from list of peaks
+    #
+    # INPUTS:
+    #   region: Boolean mask surrounding a local maximum in the power surface
+    #   peaks: List of local maxima in power surface
+    #
+    # OUTPUTS:
+    #   peaks: Shortened list of local maxima, with local maxima in region removed
+
     # Remove local maxima that have already been traced from peaks list
     toRem = []  # Empty index of peaks to remove
     # Iterate through list of peaks
     for n in range(len(peaks)):
         if region[peaks[n][0], peaks[n][1]]:  # If peak in region,
             toRem.append(n)  # add peak to removal index
-    peaks = [ value for (i, value) in enumerate(peaks) if i not in set(toRem) ]  # Then remove those peaks from peaks list
+    # Then, remove those peaks from peaks list
+    peaks = [ value for (i, value) in enumerate(peaks) if i not in set(toRem) ]
+
     return np.array(peaks)  # Return shortened list of peaks
 
 
 def updatePlotter(region, plotter):
+    # FUNCTION PURPOSE: Update the plotting mask to include everything in 'region'
+    #
+    # INPUTS:
+    #   region: Boolean mask surrounding a local maximum in the power surface
+    #   plotter: Boolean mask that is True where every past region has been True
+    #
+    # OUTPUTS:
+    #   plotter: Boolean mask that is True for every past and present region
+
     # Copy the peak estimate to a plotting map
     plotter[region] = True
 
@@ -595,11 +639,20 @@ def updatePlotter(region, plotter):
 
 
 def invertWaveletTransform(region, wavelets):
-    # Invert the wavelet transform in traced region
+    # FUNCTION PURPOSE: Invert the wavelet transformed U, V, and T in the traced region
+    #
+    # INPUTS:
+    #   region: Boolean mask surrounding a local maximum in the power surface
+    #   wavelets: Dictionary containing wavelet transformed surfaces of zonal & meridional wind and temperature
+    #
+    # OUTPUTS:
+    #   results: Dictionary containing reconstructed time series for U, V, and T in 'region'
 
-    uTrim = wavelets.get('coefU').copy()
+
+    # Perform the inversion, per Torrence & Compo (1998)
+    uTrim = wavelets.get('coefU').copy()  # Create copy so that uTrim is not dependent on wavelets
     uTrim[np.invert(region)] = 0  # Trim U based on region
-    # Sum across columns of U, then multiply by constant
+    # Sum across columns of U, then multiply by reconstruction constant
     uTrim = np.multiply(uTrim.sum(axis=0), wavelets.get('constant'))
 
     # Do the same with V
@@ -622,10 +675,18 @@ def invertWaveletTransform(region, wavelets):
     return results  # Dictionary of trimmed inverted U, V, and T
 
 
-def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelength, identifier):
-
-    # Get index across the altitudes of the wave, for use later
-    waveAlts = np.nonzero(region.sum(axis=0))
+def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
+    # FUNCTION PURPOSE: Get physical wave parameters based on the reconstructed time series of the potential wave
+    #
+    # INPUTS:
+    #   data: Pandas DataFrame with time, altitude, temperature, pressure, latitude, and longitude of flight
+    #   wave: Dictionary containing the reconstructed time series for zonal & meridional wind speed and temperature
+    #   spatialResolution: Height between rows in 'data', in meters
+    #   waveAltIndex: Index of the altitude of the wave, taken to be the altitude at the local maximum power
+    #   wavelength: Vertical wavelength, taken to be the equivalent fourier wavelength at the local maximum power
+    #
+    # OUTPUTS:
+    #   waveProp: Dictionary of wave characteristics,
 
     # Calculate the wind variance of the wave
     windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2
@@ -634,10 +695,6 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
-
-    # Get rid of unneeded variables, to save memory and improve performance
-    del windVariance
-    del wave
 
     # Seperate imaginary/real parts
     vHilbert = vTrim.copy().imag
@@ -661,48 +718,47 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
         return {}
 
-    theta = 0.5 * np.arctan2(P, D)  # What is arctan2() and what makes it different from arctan()?
+
+    theta = 0.5 * np.arctan2(P, D)  # arctan2 has a range of [-pi, pi], as opposed to arctan's range of [-pi/2, pi/2]
 
 
     # Classic 2x2 rotation matrix
     rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
     uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
 
-    #Alternative method that yields very similar results is axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
-    axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])  # From Murphy (2014) Table 1, also referenced in Zink & Vincent
+    # From Murphy (2014) Table 1, also referenced in Zink & Vincent
+    axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])
+    # Alternative method that yields very similar results is axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
 
-    # Make hodograph plot, for debugging
-    #plt.scatter(uTrim, vTrim, marker='o', color='b')
-    #plt.xlabel('U')
-    #plt.ylabel('V')
-    #plt.title('Hodograph of Traced Peak')
-    #plt.show()
 
     gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
     if np.angle(gamma) < 0:
         theta = theta + np.pi
 
+    # Coriolis frequency
     coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
 
     intrinsicF = coriolisF * axialRatio
 
-    bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared???
-    bvMean = np.mean(np.array(bvF2)[waveAlts])  # Mean of bvF2 across region
+    bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared
 
-    if not np.sqrt(bvMean) > intrinsicF > coriolisF:
+    # This code finds the mean across region bvMean = np.mean(np.array(bvF2)[np.nonzero(region.sum(axis=0))])
+
+    # However, the current code uses the Brunt-vaisala frequency squared at the wave altitude instead,
+    # which is a departure from Murphy (2014), but which I defend by claiming that finding the BV frequency,
+    # altitude, longitude, latitude, etc. at the strongest wave resemblance in our data (the power surface
+    # maximum) is a better method for dealing with asymmetrical peaks, where the radiosonde was still in
+    # contact with the wave for a while after capturing the best data, leading to a skewed hump shape in
+    # the power surface. Finding the mean assumes that the data across the whole peak is all equally valid,
+    # which I don't think is justified based on the appearance of many power surfaces.
+    bvPeak = np.array(bvF2)[waveAltIndex]
+
+
+    if not np.sqrt(bvPeak) > intrinsicF > coriolisF:
         return {}
 
-    plt.figure()
-    plt.scatter(uTrim, vTrim, c='blue')
-    plt.xlabel("Zonal windspeed [m/s]")
-    plt.ylabel("Meridional windspeed [m/s]")
-    plt.title("Radiosonde Data Collected by MSGC, 2020")
-    plt.savefig("C:/Users/12069/Documents/Eclipse2020/Presentation/Python Images/Comparison Hodographs/" +
-                identifier + "_Peak_" + str(data['Alt'][waveAltIndex]) + "_" + str(wavelength) + "_ContourMethod.png")
-    plt.close()
 
-
-    # Values that I should output are:
+    # Values that I should calculate and output are:
     # Intrinsic frequency
     # Ground based frequency
     # Periods for above frequencies
@@ -714,7 +770,7 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     # Vertical wavenumber [1/m]
     m = 2 * np.pi / wavelength
     # Horizontal wavenumber [1/m]
-    kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvMean) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
+    kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvPeak) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
     # Intrinsic vertical wave velocity [m/s]
     intrinsicVerticalGroupVel = - (1 / (intrinsicF * m)) * (intrinsicF ** 2 - coriolisF ** 2)
     # Same [1/m]
@@ -726,9 +782,9 @@ def getParameters(data, wave, spatialResolution, region, waveAltIndex, wavelengt
     # Same [m/s]
     intrinsicHorizPhaseSpeed = intrinsicF / kh
     # Same [m/s]
-    intrinsicZonalGroupVel = kh * np.sin(theta) * bvMean / (intrinsicF * m ** 2)
+    intrinsicZonalGroupVel = kh * np.sin(theta) * bvPeak / (intrinsicF * m ** 2)
     # Same [m/s]
-    intrinsicMeridionalGroupVel = kh * np.cos(theta) * bvMean / (intrinsicF * m ** 2)
+    intrinsicMeridionalGroupVel = kh * np.cos(theta) * bvPeak / (intrinsicF * m ** 2)
     # Same [m/s]
     intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel ** 2 + intrinsicMeridionalGroupVel ** 2)
     # Horizontal wavelength [m]

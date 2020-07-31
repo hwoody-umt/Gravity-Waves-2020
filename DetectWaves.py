@@ -34,7 +34,6 @@ for file in os.listdir( userInput.get('dataSource') ):
     # Perform the continuous wavelet transform to get the power surface
     wavelets = waveletTransform( data, spatialResolution, 'MORLET')  # Use morlet wavelet
 
-
     # Find local maxima in power surface
     peaks = findPeaks( wavelets.get('power') )
 
@@ -57,7 +56,7 @@ for file in os.listdir( userInput.get('dataSource') ):
     plt.contourf(data['Alt'] / 1000, yScale, wavelets.get('power'), levels=50)
     cb = plt.colorbar()
     plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, yScale[peaksToPlot.T[0]], c='red', marker='.')
-    plt.plot(data['Alt']/1000, wavelets.get('coi')[0:-1], color='blue')
+    plt.plot(data['Alt']/1000, wavelets.get('coi'), color='blue')
     # plt.contour(plotter, colors='red', levels=[0.5])
     # ax.set_aspect('auto')
     plt.yscale("log")
@@ -67,6 +66,7 @@ for file in os.listdir( userInput.get('dataSource') ):
     plt.title("Power Surface with Local Maxima")
     cb.set_label("Power [m^2/s^2]")
     plt.savefig("C:/Users/12069/Documents/Eclipse2020/Presentation/Python Images/Power_Surface_Example.png")
+    plt.close()
 
     # Numpy array for plotting purposes
     plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
@@ -87,7 +87,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         # Output progress to console, keeping user in the loop
         displayProgress( peaks, numPeaks )
         # Identify the region surrounding the peak
-        region = findPeakRegion( wavelets.get('power'), peaks[0])
+        region = findPeakSquare( wavelets.get('power'), peaks[0])
 
         # Save for plotting
         currentPeak = peaks[0]
@@ -138,6 +138,9 @@ for file in os.listdir( userInput.get('dataSource') ):
         # Save waves data here, if saveData boolean is true
         with open(userInput.get('savePath') + "/" + file[0:-4] + '_wave_parameters.json', 'w') as writeFile:
             json.dump(waves, writeFile, indent=4, default=str)
+    else:
+        print("\nWave parameters found:")
+        print(waves['waves'])
 
     # Also, build nice output plot
     drawPowerSurface(userInput, file, wavelets, data['Alt']/1000, plotter, peaksToPlot, colorsToPlot)

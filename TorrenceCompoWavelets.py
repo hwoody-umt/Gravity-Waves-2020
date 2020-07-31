@@ -178,8 +178,7 @@ def wave_bases(mother, k, scale, param):
                 np.sqrt(n)  # total energy=N   [Eqn(7)]
         daughter = norm * np.exp(expnt)
         daughter = daughter * kplus  # Heaviside step function
-        fourier_factor = (4 * np.pi) / (k0 + np.sqrt(2 + k0 ** 2)
-                                            )  # Scale-->Fourier [Sec.3h]
+        fourier_factor = (4 * np.pi) / (k0 + np.sqrt(2 + k0 ** 2))  # Scale-->Fourier [Sec.3h]
         coi = fourier_factor / np.sqrt(2)  # Cone-of-influence [Sec.3g]
         dofmin = 2  # Degrees of freedom
     elif mother == 'PAUL':  # --------------------------------  Paul
