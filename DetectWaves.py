@@ -1,12 +1,8 @@
-from WaveDetectionFunctions import getAllUserInput, cleanData, readFromData, interpolateData, findPeakSquare, \
-    waveletTransform, findPeaks, displayProgress, findPeakRegion, removePeaks, updatePlotter, invertWaveletTransform, \
-    getParameters, drawPowerSurface
+from WaveDetectionFunctions import *
 import numpy as np
 import os
 import json
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
-
+#import matplotlib.pyplot as plt
 
 
 # First, get applicable user input.
@@ -98,23 +94,6 @@ for file in os.listdir( userInput.get('dataSource') ):
         if region.sum().sum() <= 1:  # Only found the peak, not the region
             continue  # Don't bother analyzing the single cell
 
-        #ax = plt.axes()
-        #plt.imshow(wavelets.get('power'))  # ,
-        # extent=extents)
-        #ax.set_aspect('auto')
-        #cb = plt.colorbar()
-        # plt.contour(data['Alt'] / 1000, np.flip(yScale), plotter,
-        #            colors='red')
-        # plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, np.flip(yScale)[peaksToPlot.T[0]], marker='.',
-        #            edgecolors='red')
-        #plt.scatter(peaksToPlot[:, 1], peaksToPlot[:, 0], c=colorsToPlot, marker='*')
-        #plt.contour(region, colors='red', levels=[0.5])
-        #plt.xlabel("Altitude [index]")
-        #plt.ylabel("Vertical Wavelength [index]")
-        #plt.title("Power surface, including traced peaks")
-        #cb.set_label("Power [m^2/s^2]")
-        #plt.show()
-
         # Update plotting mask
         plotter = updatePlotter( region, plotter )
 
@@ -122,13 +101,13 @@ for file in os.listdir( userInput.get('dataSource') ):
         wave = invertWaveletTransform( region, wavelets )
 
         # Perform analysis to find wave information
-        parameters = getParameters( data, wave, spatialResolution, region, currentPeak[1], wavelets.get('wavelengths')[currentPeak[0]], file[0:5] )
+        parameters = getParameters( data, wave, spatialResolution, currentPeak[1], wavelets.get('wavelengths')[currentPeak[0]] )
         # If found, save parameters to dictionary of waves
         if parameters:
             name = 'wave' + str(waveCount)
             waves['waves'][name] = parameters
             waveCount += 1
-            colorIndex = (currentPeak == peaksToPlot).sum(axis=1)
+            colorIndex = np.array(currentPeak == peaksToPlot).sum(axis=1)
             colorsToPlot[np.where(colorIndex == 2)] = 'red'
 
     # Save waves data here, if saveData boolean is true

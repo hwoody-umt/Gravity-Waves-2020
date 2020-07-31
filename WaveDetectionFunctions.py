@@ -584,7 +584,7 @@ def findPeakRegion(power, peak):
             p = path.Path(contour)
 
             # Check to see if the peak is inside the closed loop of the contour path
-            if p.contains_points([[peak[0], peak[1]]]):
+            if p.contains_point(peak):
 
                 # If it is, set the boundary path to True
                 region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
@@ -740,7 +740,7 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
 
     intrinsicF = coriolisF * axialRatio
 
-    bvF2 = 9.81 / pt * np.gradient(pt, spatialResolution)  # Brunt-vaisala frequency squared
+    bvF2 = np.abs( 9.81 / pt * np.gradient(pt, spatialResolution) )  # Brunt-vaisala frequency squared
 
     # This code finds the mean across region bvMean = np.mean(np.array(bvF2)[np.nonzero(region.sum(axis=0))])
 
