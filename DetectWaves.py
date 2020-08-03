@@ -1,8 +1,8 @@
+# Import all functions from 'WaveDetectionFunctions.py', file which holds functions for this program
 from WaveDetectionFunctions import *
-import numpy as np
+
+# Import os to iterate through files in given directory
 import os
-import json
-#import matplotlib.pyplot as plt
 
 
 # First, get applicable user input.
@@ -10,6 +10,7 @@ userInput = getAllUserInput()
 
 # Then, iterate over files in data directory
 for file in os.listdir( userInput.get('dataSource') ):
+
     # Import and clean the data, given the file path
     data = cleanData( file, userInput.get('dataSource') )
 
@@ -18,8 +19,11 @@ for file in os.listdir( userInput.get('dataSource') ):
     if data.empty:
         continue
 
+    # Get the launch time and pbl height from profile header
     launchDateTime, pblHeight = readFromData( file, userInput.get('dataSource'))
-    spatialResolution = 5  # meters in between uniformly distributed data points, must be pos integer
+    # Set the height in between data points, currently 5 because it's the nominal data acquisition rate
+    spatialResolution = 5  # meters, must be pos integer
+    # Interpolate to create a uniform spatial grid of data, rather than temporal
     data = interpolateData( data, spatialResolution, pblHeight, launchDateTime )
 
     # If nothing was returned, file was missing too much data,
@@ -34,96 +38,42 @@ for file in os.listdir( userInput.get('dataSource') ):
     peaks = findPeaks( wavelets.get('power') )
 
     # Filter local maxima to within cone of influence, per Torrence & Compo (1998)
-    # Check to see if this is done by Zink & Vincent or Murphy et al
-    peakRemovalMask = np.zeros(wavelets.get('power').shape, dtype=bool)
-    for peak in peaks:
-        if wavelets.get('wavelengths')[peak[0]] > wavelets.get('coi')[peak[1]]:
-            peakRemovalMask[peak[0], peak[1]] = True
-    peaks = removePeaks(peakRemovalMask, peaks)
+    # I need to check to see if this is done by Zink & Vincent or Murphy et al
+    peaks = filterPeaksCOI(wavelets, peaks)
 
-    numPeaks = len(peaks)  # To keep track of progress
-    peaksToPlot = peaks.copy()  # Keep peaks for plot at end
-    colorsToPlot = np.array(['blue'] * len(peaks))  # Keep track for plots at end
+    # Define the needed variables, outside of the loop
+    waves, plottingInfo = setUpLoop(data, wavelets, peaks)
 
 
-
-    yScale = wavelets.get('wavelengths')
-    # plt.imshow(wavelets.get('power'), extent=extents, origin='lower')
-    plt.contourf(data['Alt'] / 1000, yScale, wavelets.get('power'), levels=50)
-    cb = plt.colorbar()
-    plt.scatter(data['Alt'][peaksToPlot.T[1]] / 1000, yScale[peaksToPlot.T[0]], c='red', marker='.')
-    plt.plot(data['Alt']/1000, wavelets.get('coi'), color='blue')
-    # plt.contour(plotter, colors='red', levels=[0.5])
-    # ax.set_aspect('auto')
-    plt.yscale("log")
-    plt.xlabel("Altitude [km]")
-    plt.ylabel("Vertical Wavelength [m]")
-    plt.ylim(yScale[0], yScale[-1])
-    plt.title("Power Surface with Local Maxima")
-    cb.set_label("Power [m^2/s^2]")
-    plt.savefig("C:/Users/12069/Documents/Eclipse2020/Presentation/Python Images/Power_Surface_Example.png")
-    plt.close()
-
-    # Numpy array for plotting purposes
-    plotter = np.zeros( wavelets.get('power').shape, dtype=bool )
-
-    # Index to only save 1/50 of the data for plotting, the detail isn't all needed
-    trimIndex = np.arange(0, len(data['Time']), 50)
-    waves = {
-        'waves': {},  # Empty dictionary, to contain wave characteristics
-        'flightPath': {  # Flight path for plotting results
-            'time': np.array(data['Time'][trimIndex]).tolist(),
-            'alt': np.array(data['Alt'][trimIndex]).tolist()
-        }
-    }
-    waveCount = 1  # For naming output waves
-
-    # Iterate over local maximums to identify wave characteristics
+    # Iterate over local maxima to identify wave characteristics
     while len(peaks) > 0:
-        # Output progress to console, keeping user in the loop
-        displayProgress( peaks, numPeaks )
+
+        # Output progress to console, keeping user informed
+        displayProgress( peaks, len(plottingInfo.get('peaks')) )
+
         # Identify the region surrounding the peak
         region = findPeakSquare( wavelets.get('power'), peaks[0])
 
-        # Save for plotting
-        currentPeak = peaks[0]
-
-        # Update list of peaks that have yet to be analyzed
-        peaks = removePeaks( region, peaks )
-
-        if region.sum().sum() <= 1:  # Only found the peak, not the region
-            continue  # Don't bother analyzing the single cell
-
-        # Update plotting mask
-        plotter = updatePlotter( region, plotter )
+        #if region.sum().sum() <= 1:  # Only found the peak, not the region
+        #    continue  # Don't bother analyzing the single cell
 
         # Get inverted regional maximums
         wave = invertWaveletTransform( region, wavelets )
 
         # Perform analysis to find wave information
-        parameters = getParameters( data, wave, spatialResolution, currentPeak[1], wavelets.get('wavelengths')[currentPeak[0]] )
-        # If found, save parameters to dictionary of waves
-        if parameters:
-            name = 'wave' + str(waveCount)
-            waves['waves'][name] = parameters
-            waveCount += 1
-            colorIndex = np.array(currentPeak == peaksToPlot).sum(axis=1)
-            colorsToPlot[np.where(colorIndex == 2)] = 'red'
+        parameters = getParameters(data, wave, spatialResolution, peaks[0, 1], wavelets.get('wavelengths')[peaks[0, 0]])
 
-    # Save waves data here, if saveData boolean is true
-    if userInput.get('saveData'):
-        # Sort the data first, for easier analysis
-        waves['waves'] = sorted(waves['waves'].items(), key=lambda x: x[1].get('Altitude [km]'))
-        # Save waves data here, if saveData boolean is true
-        with open(userInput.get('savePath') + "/" + file[0:-4] + '_wave_parameters.json', 'w') as writeFile:
-            json.dump(waves, writeFile, indent=4, default=str)
-    else:
-        print("\nWave parameters found:")
-        print(waves['waves'])
+        # Update pertinent variables to save current wave parameters, increment counters, and shorten peaks list
+        waves, plottingInfo, peaks = saveParametersInLoop(waves, plottingInfo, parameters, region, peaks)
 
-    # Also, build nice output plot
-    drawPowerSurface(userInput, file, wavelets, data['Alt']/1000, plotter, peaksToPlot, colorsToPlot)
 
+    # Either save or print to the console wave parameters, depending on user input
+    outputWaveParameters(userInput, waves, file)
+
+    # Also, build and show/save power surface plot
+    drawPowerSurface(userInput, file, wavelets, data['Alt']/1000, plottingInfo.get('regions'), plottingInfo.get('peaks'), plottingInfo.get('colors'))
+
+    # Done with this radiosonde flight, print 'finished' and continue to next file
     print("\nFinished file analysis")
 
 ########## FINISHED ANALYSIS ##########

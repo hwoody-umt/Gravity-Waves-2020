@@ -12,7 +12,8 @@ from skimage.feature import peak_local_max  # Find local max
 import datetime  # Turning time into dates
 from skimage.measure import find_contours  # Find contour levels around local max
 from scipy.ndimage.morphology import binary_fill_holes  # Then fill in those contour levels
-from scipy.signal import argrelextrema
+from scipy.signal import argrelextrema  # Find one-dimensional local min, for peak rectangle method
+import json  # Used to save wave parameters to json file
 
 
 
@@ -89,7 +90,47 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     #plt.close()
 
 
-########## USER INPUT SECTION ##########
+def setUpLoop(data, wavelets, peaks):
+    # FUNCTION PURPOSE: Define variables needed outside of the local maxima tracing/analysis loop
+    #
+    # INPUTS:
+    #   data: Pandas DataFrame containing flight information
+    #   wavelets: Dictionary containing wavelet transformed surfaces of zonal & meridional wind and temperature
+    #   peaks: List of local maxima in power surface
+    #
+    # OUTPUTS:
+    #   waves: Dictionary to contain wave parameters and the flight path (for analysis plots)
+    #   results: Dictionary containing the number of current wave, a full list of local
+    #               maxima, a corresponding list of colors, and a boolean mask of peak regions
+
+    peaksToPlot = peaks.copy()  # Keep peaks for plot at end
+    colorsToPlot = np.array(['blue'] * len(peaks))  # Keep track for plots at end
+
+    # Numpy array for plotting purposes
+    regionPlotter = np.zeros( wavelets.get('power').shape, dtype=bool )
+
+    # Index to only save 1/50 of the data for plotting, the detail isn't all needed
+    trimIndex = np.arange(0, len(data['Time'])+50, 50)
+    waves = {
+        'waves': {},  # Empty dictionary, to contain wave characteristics
+        'flightPath': {  # Flight path for plotting results
+            'time': np.array(data['Time'][trimIndex]).tolist(),
+            'alt': np.array(data['Alt'][trimIndex]).tolist()
+        }
+    }
+    waveCount = 1  # For naming output waves
+
+    results = {
+        'waveCount': waveCount,
+        'peaks': peaksToPlot,
+        'colors': colorsToPlot,
+        'regions': regionPlotter
+    }
+
+    return waves, results
+
+
+########## USER INTERFACE SECTION ##########
 
 
 def getUserInputFile(prompt):
@@ -198,6 +239,34 @@ def getAllUserInput():
 
     # Return the resulting dictionary
     return results
+
+
+def outputWaveParameters(userInput, waves, fileName):
+    # FUNCTION PURPOSE: Save or print final wave parameters from finished analysis
+    #
+    # INPUTS:
+    #   userInput: Dictionary containing user input, especially data saving information
+    #   waves: Dictionary containing final wave parameters from the completed analysis
+    #   fileName: String with the name of the profile currently being analyzed
+    #
+    # OUTPUTS: Either save a file according to the user input save path, or print it to the console
+
+    # If the user asked for data to be saved, do it
+    if userInput.get('saveData'):
+
+        # The following is code to sort the waves by alt, but it has trouble with the dictionary format and needs fixing
+        # waves['waves'] = sorted(waves['waves'].items(), key=lambda x: x[1].get('Altitude [km]'))
+
+        # Save waves data to a JSON file here
+        with open(userInput.get('savePath') + "/" + fileName[0:-4] + '_wave_parameters.json', 'w') as writeFile:
+            # Indent=4 sets human-readable whitespace, making the output viewable in a text editor
+            json.dump(waves, writeFile, indent=4, default=str)
+
+    # Otherwise, print the output to the console for user to see
+    else:
+
+        print("\nWave parameters found:")
+        print(json.dumps(waves['waves'], indent=4, default=str))
 
 
 ########## DATA INPUT SECTION ##########
@@ -600,6 +669,31 @@ def findPeakRegion(power, peak):
     return region
 
 
+def filterPeaksCOI(wavelets, peaks):
+    # FUNCTION PURPOSE: Remove local maxima that are outside the cone of influence
+    #
+    # INPUTS:
+    #   wavelets: Dictionary containing wavelet transformation output, including COI
+    #   peaks: List of local maxima in power surface
+    #
+    # OUTPUTS:
+    #   peaks: Shortened list of local maxima, with local maxima outside COI removed
+
+    # First, define an empty boolean mask
+    peakRemovalMask = np.zeros(wavelets.get('power').shape, dtype=bool)
+
+    # For each peak, if the peak is outside COI, set the mask to True
+    for peak in peaks:
+        if wavelets.get('wavelengths')[peak[0]] > wavelets.get('coi')[peak[1]]:
+            peakRemovalMask[peak[0], peak[1]] = True
+
+    # Then, pass the mask to the standard peak removal function
+    peaks = removePeaks(peakRemovalMask, peaks)
+
+    # Return shortened local maxima list
+    return peaks
+
+
 def removePeaks(region, peaks):
     # FUNCTION PURPOSE: Remove local maxima that are currently traced in 'region' from list of peaks
     #
@@ -622,20 +716,43 @@ def removePeaks(region, peaks):
     return np.array(peaks)  # Return shortened list of peaks
 
 
-def updatePlotter(region, plotter):
-    # FUNCTION PURPOSE: Update the plotting mask to include everything in 'region'
+def saveParametersInLoop(waves, plottingInfo, parameters, region, peaks):
+    # FUNCTION PURPOSE: Set out-of-loop variables to save wave parameters and other variables local to the loop
     #
     # INPUTS:
-    #   region: Boolean mask surrounding a local maximum in the power surface
-    #   plotter: Boolean mask that is True where every past region has been True
+    #   waves: Dictionary containing wave information for the current radiosonde flight
+    #   plottingInfo: Dictionary keeping track of plotting information throughout successive loop iterations
+    #   parameters: Dictionary of current wave parameters, could be empty if wave was determined non-physical
+    #   region: Boolean mask showing the region surrounding the current local maximum
+    #   peaks: List of local maxima, with peaks[0] being currently analyzed
     #
     # OUTPUTS:
-    #   plotter: Boolean mask that is True for every past and present region
+    #   waves: Dictionary updated to contain the current wave's characteristics
+    #   plottingInfo: Dictionary with updated mask of peak regions, color list, and wave number
+    #   peaks: Shortened list of local maxima, with current peak(s) removed
 
-    # Copy the peak estimate to a plotting map
-    plotter[region] = True
 
-    return plotter  # Return plotting boolean mask
+    # If found, save parameters to dictionary of waves
+    if parameters:
+        # Copy the peak region estimate to a plotting map
+        plottingInfo['regions'][region] = True
+
+        # Set the name of the current wave
+        name = 'wave' + str(plottingInfo.get('waveCount'))
+        # Assign the parameters to that name in 'waves'
+        waves['waves'][name] = parameters
+        # Increment the wave counter so that waves don't get overwritten
+        plottingInfo['waveCount'] = plottingInfo.get('waveCount') + 1
+
+        # Find similarities between the current peak and the list of peaks for plotting
+        colorIndex = np.array(peaks[0] == plottingInfo.get('peaks')).sum(axis=1)
+        # Where equal, set the color to red instead of blue for the output plot
+        plottingInfo['colors'][np.where(colorIndex == 2)] = 'red'
+
+    # Finally, update list of peaks that have yet to be analyzed by removing peaks defined in 'region'
+    peaks = removePeaks(region, peaks)
+
+    return waves, plottingInfo, peaks  # Return dictionaries and list of peaks
 
 
 def invertWaveletTransform(region, wavelets):
