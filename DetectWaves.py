@@ -1,6 +1,5 @@
 # Import all functions from 'WaveDetectionFunctions.py', file which holds functions for this program
 from WaveDetectionFunctions import *
-
 # Import os to iterate through files in given directory
 import os
 
@@ -52,7 +51,7 @@ for file in os.listdir( userInput.get('dataSource') ):
         displayProgress( peaks, len(plottingInfo.get('peaks')) )
 
         # Identify the region surrounding the peak
-        region = findPeakSquare( wavelets.get('power'), peaks[0])
+        region = findPeakRectangle( wavelets.get('power'), peaks[0])
 
         #if region.sum().sum() <= 1:  # Only found the peak, not the region
         #    continue  # Don't bother analyzing the single cell
@@ -76,5 +75,5 @@ for file in os.listdir( userInput.get('dataSource') ):
     # Done with this radiosonde flight, print 'finished' and continue to next file
     print("\nFinished file analysis")
 
-########## FINISHED ANALYSIS ##########
-print("\nAnalyzed all files in folder "+userInput.get('dataSource')+"/")
+# Finished with every file in folder, now done running program
+print("\n\nAnalyzed all files in folder "+userInput.get('dataSource')+"/")

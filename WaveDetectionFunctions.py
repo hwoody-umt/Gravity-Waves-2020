@@ -1,14 +1,16 @@
+
+
 ########## IMPORT LIBRARIES AND FUNCTIONS ##########
 
 import numpy as np  # Numbers (like pi) and math
+from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import matplotlib.pyplot as plt  # Easy plotting
 import matplotlib.path as path  # Used for finding the peak region
 import pandas as pd  # Convenient data formatting, and who doesn't want pandas
-from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import os  # File reading and input
 from io import StringIO  # Used to run strings through input/output functions
 from TorrenceCompoWavelets import wavelet as continuousWaveletTransform  # Torrence & Compo (1998) wavelet analysis code
-from skimage.feature import peak_local_max  # Find local max
+from skimage.feature import peak_local_max  # Find local maxima in power surface
 import datetime  # Turning time into dates
 from skimage.measure import find_contours  # Find contour levels around local max
 from scipy.ndimage.morphology import binary_fill_holes  # Then fill in those contour levels
@@ -16,121 +18,7 @@ from scipy.signal import argrelextrema  # Find one-dimensional local min, for pe
 import json  # Used to save wave parameters to json file
 
 
-
-def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToPlot, colorsToPlot):
-    # FUNCTION PURPOSE: Create a power surface showing local maxima and their outlines
-    #
-    # INPUTS:
-    #   userInput: Dictionary containing whether to save/show the plots, as well as a save path
-    #   fileName: String, name of the profile file currently being analyzed
-    #   wavelets: Dictionary containing power surface and corresponding wavelengths
-    #   altitudes: Pandas DataFrame column with altitudes (IN KM) corresponding to the power surface
-    #   plotter: Boolean mask identifying traced regions on power surface
-    #   peaksToPlot: Numpy 2d array containing peaks, e.g. [ [row1, col1], [row2, col2], ... [rowN, colN] ]
-    #   colorsToPlot: Numpy array of strings corresponding to each peak, e.g. [ "color1", "color2", ... "colorN" ]
-    #
-    # OUTPUTS: Returns nothing, prints to console and saves files and/or shows images
-
-    # If neither saving nor showing the plots, then don't bother making them
-    if not userInput.get('saveData') and not userInput.get('showPlots'):
-        return
-
-    # Console output to keep the user up to date
-    print("\r\nGenerating power surface plots", end='')
-
-    # Get the vertical wavelengths for the Y coordinates
-    yScale = wavelets.get('wavelengths')
-    # Contourf is a filled contour, which is the easiest tool to plot a colored surface
-    # Levels is set to 50 to make it nearly continuous, which takes a while,
-    # but looks good and handles the non-uniform yScale, which plt.imshow() does not
-    plt.contourf(altitudes, yScale, wavelets.get('power'), levels=50)
-    # Create a colorbar for the z scale
-    cb = plt.colorbar()
-    # Plot the outlines of the local maxima, contour is an easy way to outline a mask
-    # The 'plotter' is a boolean mask, so levels is set to 0.5 to be between 0 and 1
-    plt.contour(altitudes, yScale, plotter, colors='red', levels=[0.5])
-    # Make a scatter plot of the identified peaks, coloring them according to which ones were confirmed as waves
-    plt.scatter(altitudes[peaksToPlot.T[1]], yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
-    # Plot the cone of influence in black
-    plt.plot(altitudes, wavelets.get('coi'), color='black')
-    # Set the axis scales, labels, and titles
-    plt.yscale("log")
-    plt.xlabel("Altitude [km]")
-    plt.ylabel("Vertical Wavelength [m]")
-    plt.ylim(yScale[0], yScale[-1])
-    plt.title("Power surface, including traced peaks")
-    cb.set_label("Power [m^2/s^2]")
-
-    # Save and/or show the plot, according to user input.
-    if userInput.get('saveData'):
-        plt.savefig(userInput.get('savePath') + "/" + fileName[0:-4] + "_power_surface.png")
-    if userInput.get('showPlots'):
-        plt.show()
-    plt.close()
-
-    # Below is code to plot the power surface in 3D.
-    # It's commented out because it doesn't look very good,
-    # and it's confusing/not that useful.
-    # However, with several innovations, it could be helpful,
-    # so it's here for the future.
-
-    #from matplotlib import cm
-    #X, Y = np.meshgrid(altitudes, np.log10(yScale))
-    #fig = plt.figure()
-    #ax = fig.gca(projection='3d')
-    #surf = ax.plot_surface(X, Y, wavelets.get('power'), cmap=cm.viridis)
-    #fig.colorbar(surf)
-    #ax.set_zlabel('Power [m^2(s^-2)]')
-    #ax.set_ylabel('log10(vertical wavelength)')
-    #ax.set_xlabel('Altitude [km]')
-    #if userInput.get('saveData'):
-    #    plt.savefig(userInput.get('savePath') + "/" + fileName[0:-4] + "_power_surface_3D.png")
-    #if userInput.get('showPlots'):
-    #    plt.show()
-    #plt.close()
-
-
-def setUpLoop(data, wavelets, peaks):
-    # FUNCTION PURPOSE: Define variables needed outside of the local maxima tracing/analysis loop
-    #
-    # INPUTS:
-    #   data: Pandas DataFrame containing flight information
-    #   wavelets: Dictionary containing wavelet transformed surfaces of zonal & meridional wind and temperature
-    #   peaks: List of local maxima in power surface
-    #
-    # OUTPUTS:
-    #   waves: Dictionary to contain wave parameters and the flight path (for analysis plots)
-    #   results: Dictionary containing the number of current wave, a full list of local
-    #               maxima, a corresponding list of colors, and a boolean mask of peak regions
-
-    peaksToPlot = peaks.copy()  # Keep peaks for plot at end
-    colorsToPlot = np.array(['blue'] * len(peaks))  # Keep track for plots at end
-
-    # Numpy array for plotting purposes
-    regionPlotter = np.zeros( wavelets.get('power').shape, dtype=bool )
-
-    # Index to only save 1/50 of the data for plotting, the detail isn't all needed
-    trimIndex = np.arange(0, len(data['Time'])+50, 50)
-    waves = {
-        'waves': {},  # Empty dictionary, to contain wave characteristics
-        'flightPath': {  # Flight path for plotting results
-            'time': np.array(data['Time'][trimIndex]).tolist(),
-            'alt': np.array(data['Alt'][trimIndex]).tolist()
-        }
-    }
-    waveCount = 1  # For naming output waves
-
-    results = {
-        'waveCount': waveCount,
-        'peaks': peaksToPlot,
-        'colors': colorsToPlot,
-        'regions': regionPlotter
-    }
-
-    return waves, results
-
-
-########## USER INTERFACE SECTION ##########
+########## USER INTERFACE ##########
 
 
 def getUserInputFile(prompt):
@@ -241,6 +129,19 @@ def getAllUserInput():
     return results
 
 
+def displayProgress(peaks, length):
+    # FUNCTION PURPOSE: Display console output detailing progress analyzing local maxima
+    #
+    # INPUTS:
+    #   peaks: Numpy 2d array containing list of peaks yet to be analyzed
+    #   length: Original number of peaks to be analyzed
+    #
+    # OUTPUTS: None
+
+    # Print progress to the console, beginning with carriage return (\r) and ending without newline
+    print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
+
+
 def outputWaveParameters(userInput, waves, fileName):
     # FUNCTION PURPOSE: Save or print final wave parameters from finished analysis
     #
@@ -269,7 +170,80 @@ def outputWaveParameters(userInput, waves, fileName):
         print(json.dumps(waves['waves'], indent=4, default=str))
 
 
-########## DATA INPUT SECTION ##########
+def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToPlot, colorsToPlot):
+    # FUNCTION PURPOSE: Create a power surface showing local maxima and their outlines
+    #
+    # INPUTS:
+    #   userInput: Dictionary containing whether to save/show the plots, as well as a save path
+    #   fileName: String, name of the profile file currently being analyzed
+    #   wavelets: Dictionary containing power surface and corresponding wavelengths
+    #   altitudes: Pandas DataFrame column with altitudes (IN KM) corresponding to the power surface
+    #   plotter: Boolean mask identifying traced regions on power surface
+    #   peaksToPlot: Numpy 2d array containing peaks, e.g. [ [row1, col1], [row2, col2], ... [rowN, colN] ]
+    #   colorsToPlot: Numpy array of strings corresponding to each peak, e.g. [ "color1", "color2", ... "colorN" ]
+    #
+    # OUTPUTS: Returns nothing, prints to console and saves files and/or shows images
+
+    # If neither saving nor showing the plots, then don't bother making them
+    if not userInput.get('saveData') and not userInput.get('showPlots'):
+        return
+
+    # Console output to keep the user up to date
+    print("\r\nGenerating power surface plots", end='')
+
+    # Get the vertical wavelengths for the Y coordinates
+    yScale = wavelets.get('wavelengths')
+    # Contourf is a filled contour, which is the easiest tool to plot a colored surface
+    # Levels is set to 50 to make it nearly continuous, which takes a while,
+    # but looks good and handles the non-uniform yScale, which plt.imshow() does not
+    plt.contourf(altitudes, yScale, wavelets.get('power'), levels=50)
+    # Create a colorbar for the z scale
+    cb = plt.colorbar()
+    # Plot the outlines of the local maxima, contour is an easy way to outline a mask
+    # The 'plotter' is a boolean mask, so levels is set to 0.5 to be between 0 and 1
+    plt.contour(altitudes, yScale, plotter, colors='red', levels=[0.5])
+    # Make a scatter plot of the identified peaks, coloring them according to which ones were confirmed as waves
+    plt.scatter(altitudes[peaksToPlot.T[1]], yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
+    # Plot the cone of influence in black
+    plt.plot(altitudes, wavelets.get('coi'), color='black')
+    # Set the axis scales, labels, and titles
+    plt.yscale("log")
+    plt.xlabel("Altitude [km]")
+    plt.ylabel("Vertical Wavelength [m]")
+    plt.ylim(yScale[0], yScale[-1])
+    plt.title("Power surface, including traced peaks")
+    cb.set_label("Power [m^2/s^2]")
+
+    # Save and/or show the plot, according to user input.
+    if userInput.get('saveData'):
+        plt.savefig(userInput.get('savePath') + "/" + fileName[0:-4] + "_power_surface.png")
+    if userInput.get('showPlots'):
+        plt.show()
+    plt.close()
+
+    # Below is code to plot the power surface in 3D.
+    # It's commented out because it doesn't look very good,
+    # and it's confusing/not that useful.
+    # However, with several innovations, it could be helpful,
+    # so it's here for the future.
+
+    #from matplotlib import cm
+    #X, Y = np.meshgrid(altitudes, np.log10(yScale))
+    #fig = plt.figure()
+    #ax = fig.gca(projection='3d')
+    #surf = ax.plot_surface(X, Y, wavelets.get('power'), cmap=cm.viridis)
+    #fig.colorbar(surf)
+    #ax.set_zlabel('Power [m^2(s^-2)]')
+    #ax.set_ylabel('log10(vertical wavelength)')
+    #ax.set_xlabel('Altitude [km]')
+    #if userInput.get('saveData'):
+    #    plt.savefig(userInput.get('savePath') + "/" + fileName[0:-4] + "_power_surface_3D.png")
+    #if userInput.get('showPlots'):
+    #    plt.show()
+    #plt.close()
+
+
+########## DATA INPUT/MANAGEMENT ##########
 
 def cleanData(file, path):
     # FUNCTION PURPOSE: Read a data file, and if the file contains GRAWMET profile data,
@@ -399,9 +373,6 @@ def readFromData(file, path):
     return launchDateTime, pblHeight
 
 
-########## PERFORMING ANALYSIS ##########
-
-
 def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
     # FUNCTION PURPOSE: Interpolate to create a Pandas DataFrame for the flight as a uniform
     #                   spatial grid, with datetime.datetime objects in the time column
@@ -458,6 +429,8 @@ def interpolateData(data, spatialResolution, pblHeight, launchDateTime):
 
     return data  # Return pandas data frame
 
+
+########## WAVELET TRANSFORMATION ##########
 
 def waveletTransform(data, spatialResolution, wavelet):
     # FUNCTION PURPOSE: Perform the continuous wavelet transform on wind speed components and temperature
@@ -533,141 +506,44 @@ def waveletTransform(data, spatialResolution, wavelet):
     return results  # Dictionary of wavelet-transformed surfaces
 
 
-def findPeaks(power):
-    # FUNCTION PURPOSE: Find the local maxima in the give power surface
+def invertWaveletTransform(region, wavelets):
+    # FUNCTION PURPOSE: Invert the wavelet transformed U, V, and T in the traced region
     #
     # INPUTS:
-    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #   region: Boolean mask surrounding a local maximum in the power surface
+    #   wavelets: Dictionary containing wavelet transformed surfaces of zonal & meridional wind and temperature
     #
     # OUTPUTS:
-    #   peaks: Numpy 2d array containing peak coordinates, e.g. [ [row1, col1], [row2, col2], ... [rowN, colN] ]
+    #   results: Dictionary containing reconstructed time series for U, V, and T in 'region'
 
 
-    # UI console output to keep user informed
-    print("\nSearching for local maxima in power surface", end='')
+    # Perform the inversion, per Torrence & Compo (1998)
+    uTrim = wavelets.get('coefU').copy()  # Create copy so that uTrim is not dependent on wavelets
+    uTrim[np.invert(region)] = 0  # Trim U based on region
+    # Sum across columns of U, then multiply by reconstruction constant
+    uTrim = np.multiply(uTrim.sum(axis=0), wavelets.get('constant'))
 
-    # Find and return coordinates of local maximums
-    cutOff = 0.05  # Disregard maximums less than cutOff * max power, empirically determined via trial & error
-    # Finds local maxima based on cutOff, margin
-    peaks = peak_local_max(power, threshold_rel=cutOff)
+    # Do the same with V
+    vTrim = wavelets.get('coefV').copy()
+    vTrim[np.invert(region)] = 0
+    vTrim = np.multiply( vTrim.sum(axis=0), wavelets.get('constant') )
 
-    print()  # Newline for next console output
+    # Again with T
+    tTrim = wavelets.get('coefT').copy()
+    tTrim[np.invert(region)] = 0
+    tTrim = np.multiply( tTrim.sum(axis=0), wavelets.get('constant') )
 
-    return np.array(peaks)  # Array of coordinate arrays
+    # Declare results in dictionary
+    results = {
+        'uTrim': uTrim,
+        'vTrim': vTrim,
+        'tTrim': tTrim
+    }
 
-
-def displayProgress(peaks, length):
-    # FUNCTION PURPOSE: Display console output detailing progress analyzing local maxima
-    #
-    # INPUTS:
-    #   peaks: Numpy 2d array containing list of peaks yet to be analyzed
-    #   length: Original number of peaks to be analyzed
-    #
-    # OUTPUTS: None
-
-    # Print progress to the console, beginning with carriage return (\r) and ending without newline
-    print("\rTracing and analyzing peak " + str(length - len(peaks) + 1) + "/" + str(length), end='')
-
-
-def findPeakSquare(power, peak):
-    # FUNCTION PURPOSE: Trace a rectangle around a local maximum in the power surface,
-    #                   following the method of Zink & Vincent (2001), which iterates
-    #                   in four directions until either 25% of peak power is reached,
-    #                   of the power surface begins increasing.
-    #
-    # INPUTS:
-    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
-    #   peak: Numpy array containing row and column coordinates of local maximum in power surface
-    #
-    # OUTPUTS:
-    #   region: Boolean mask the size & shape of power that is True inside rectangle and false elsewhere
-
-    # Create boolean mask, initialized as False
-    region = np.zeros(power.shape, dtype=bool)
-
-    # Per Zink & Vincent (2001), the limit is 25% of peak power
-    powerLimit = 0.25 * power[peak[0], peak[1]]
-
-    # Get the row and column of the peak
-    row = power[peak[0], :]
-    col = power[:, peak[1]]
-
-    # Create an array with coordinates of local minima on the row
-    rowMins = np.array(argrelextrema(row, np.less))
-    # Append all coordinates where the row is less than the power limit
-    rowMins = np.append(rowMins, np.where(row <= powerLimit))
-    # Add the peak itself, as well as the boundaries in case peak is near the edge
-    rowMins = np.sort(np.append(rowMins, [0, peak[1], power.shape[1]-1]))
-    # Get the two values on either side of the peak in the sorted array of indices
-    cols = np.arange( rowMins[np.where(rowMins == peak[1])[0]-1], rowMins[np.where(rowMins == peak[1])[0]+1] + 1).tolist()
-
-    # Repeat for the column, to get the boundaries for the rows
-    colMins = np.array(argrelextrema(col, np.less))
-    colMins = np.append(colMins, np.where(col <= powerLimit))
-    colMins = np.sort(np.append(colMins, [0, peak[0], power.shape[0]-1]))
-    rows = np.arange(colMins[np.where(colMins == peak[0])[0] - 1][0], colMins[np.where(colMins == peak[0])[0] + 1][0] + 1).tolist()
-
-    # Set the boolean mask to true inside those boundaries
-    region[np.ix_(rows, cols)] = True
-
-    return region
+    return results  # Dictionary of trimmed inverted U, V, and T
 
 
-def findPeakRegion(power, peak):
-    # FUNCTION PURPOSE: Trace a contour line around a local maximum in the power surface,
-    #                   possibly following Murphy (2014). The paper is unclear, and I still
-    #                   need to investigate the IDL code to find the exact method.
-    #
-    # INPUTS:
-    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
-    #   peak: Numpy array containing row and column coordinates of local maximum in power surface
-    #
-    # OUTPUTS:
-    #   region: Boolean mask the size & shape of power that is True inside contour and false elsewhere
-
-    # Create boolean mask, initialized as False
-    region = np.zeros(power.shape, dtype=bool)
-
-    # If for some reason this method can't isolate a region surrounding the peak,
-    # set the peak itself to True so that it will be removed from list of peaks
-    region[peak[0], peak[1]] = True
-
-    # Find cut-off power level, based on height of peak
-    # No one level works for all peaks, so iterate through different contours until one works
-    relativePowerLevels = np.arange(0.55, 1.00, 0.05)  # Try levels 55%, 60%, 65%, ... 90%, 95%
-    absolutePowerLevels = power[peak[0], peak[1]] * relativePowerLevels
-
-    for level in absolutePowerLevels:
-
-        # Find all the contours at cut-off level
-        contours = find_contours(power, level)
-
-        # Loop through contours to find the one surrounding the peak
-        for contour in contours:
-
-            # If the contour runs into multiple edges, skip as it's not worth trying
-            if contour[0, 0] != contour[-1, 0] and contour[0, 1] != contour[-1, 1]:
-                continue
-
-            # Use matplotlib.path.Path to create a path
-            p = path.Path(contour)
-
-            # Check to see if the peak is inside the closed loop of the contour path
-            if p.contains_point(peak):
-
-                # If it is, set the boundary path to True
-                region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
-
-                # Then fill in the contour to create mask surrounding peak
-                region = binary_fill_holes(region)
-
-                # The method is now done, so return region
-                return region
-
-    # If this method couldn't find a contour that surrounded the peak,
-    # then return the boolean mask that is False except for the peak itself
-    return region
-
+########## VARIABLE MANAGEMENT ##########
 
 def filterPeaksCOI(wavelets, peaks):
     # FUNCTION PURPOSE: Remove local maxima that are outside the cone of influence
@@ -734,6 +610,7 @@ def saveParametersInLoop(waves, plottingInfo, parameters, region, peaks):
 
     # If found, save parameters to dictionary of waves
     if parameters:
+
         # Copy the peak region estimate to a plotting map
         plottingInfo['regions'][region] = True
 
@@ -755,42 +632,175 @@ def saveParametersInLoop(waves, plottingInfo, parameters, region, peaks):
     return waves, plottingInfo, peaks  # Return dictionaries and list of peaks
 
 
-def invertWaveletTransform(region, wavelets):
-    # FUNCTION PURPOSE: Invert the wavelet transformed U, V, and T in the traced region
+def setUpLoop(data, wavelets, peaks):
+    # FUNCTION PURPOSE: Define variables needed outside of the local maxima tracing/analysis loop
     #
     # INPUTS:
-    #   region: Boolean mask surrounding a local maximum in the power surface
+    #   data: Pandas DataFrame containing flight information
     #   wavelets: Dictionary containing wavelet transformed surfaces of zonal & meridional wind and temperature
+    #   peaks: List of local maxima in power surface
     #
     # OUTPUTS:
-    #   results: Dictionary containing reconstructed time series for U, V, and T in 'region'
+    #   waves: Dictionary to contain wave parameters and the flight path (for analysis plots)
+    #   results: Dictionary containing the number of current wave, a full list of local
+    #               maxima, a corresponding list of colors, and a boolean mask of peak regions
 
+    peaksToPlot = peaks.copy()  # Keep peaks for plot at end
+    colorsToPlot = np.array(['blue'] * len(peaks))  # Keep track for plots at end
 
-    # Perform the inversion, per Torrence & Compo (1998)
-    uTrim = wavelets.get('coefU').copy()  # Create copy so that uTrim is not dependent on wavelets
-    uTrim[np.invert(region)] = 0  # Trim U based on region
-    # Sum across columns of U, then multiply by reconstruction constant
-    uTrim = np.multiply(uTrim.sum(axis=0), wavelets.get('constant'))
+    # Numpy array for plotting purposes
+    regionPlotter = np.zeros( wavelets.get('power').shape, dtype=bool )
 
-    # Do the same with V
-    vTrim = wavelets.get('coefV').copy()
-    vTrim[np.invert(region)] = 0
-    vTrim = np.multiply( vTrim.sum(axis=0), wavelets.get('constant') )
+    # Create index to only save 1/50 of the data for plotting, the detail isn't all needed
+    step = int(len(data['Time'])/50)
+    trimIndex = np.arange(0, len(data['Time']), step)
 
-    # Again with T
-    tTrim = wavelets.get('coefT').copy()
-    tTrim[np.invert(region)] = 0
-    tTrim = np.multiply( tTrim.sum(axis=0), wavelets.get('constant') )
+    # Define dictionary to track waves and flight info
+    waves = {
+        'waves': {},  # Empty dictionary, to contain wave characteristics
+        'flightPath': {  # Flight path for plotting results
+            'time': np.array(data.iloc[trimIndex, data.columns.values == 'Time']).tolist(),
+            'alt': np.array(data.iloc[trimIndex, data.columns.values == 'Alt']).tolist()
+        }
+    }
+    waveCount = 1  # For naming output waves
 
-    # Declare results in dictionary
     results = {
-        'uTrim': uTrim,
-        'vTrim': vTrim,
-        'tTrim': tTrim
+        'waveCount': waveCount,
+        'peaks': peaksToPlot,
+        'colors': colorsToPlot,
+        'regions': regionPlotter
     }
 
-    return results  # Dictionary of trimmed inverted U, V, and T
+    return waves, results
 
+
+########## POWER SURFACE ANALYSIS ##########
+
+def findPeaks(power):
+    # FUNCTION PURPOSE: Find the local maxima in the give power surface
+    #
+    # INPUTS:
+    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #
+    # OUTPUTS:
+    #   peaks: Numpy 2d array containing peak coordinates, e.g. [ [row1, col1], [row2, col2], ... [rowN, colN] ]
+
+
+    # UI console output to keep user informed
+    print("\nSearching for local maxima in power surface", end='')
+
+    # Find and return coordinates of local maximums
+    cutOff = 0.05  # Disregard maximums less than cutOff * max power, empirically determined via trial & error
+    # Finds local maxima based on cutOff, margin
+    peaks = peak_local_max(power, threshold_rel=cutOff)
+
+    print()  # Newline for next console output
+
+    return np.array(peaks)  # Array of coordinate arrays
+
+
+def findPeakRectangle(power, peak):
+    # FUNCTION PURPOSE: Trace a rectangle around a local maximum in the power surface,
+    #                   following the method of Zink & Vincent (2001), which iterates
+    #                   in four directions until either 25% of peak power is reached,
+    #                   of the power surface begins increasing.
+    #
+    # INPUTS:
+    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #   peak: Numpy array containing row and column coordinates of local maximum in power surface
+    #
+    # OUTPUTS:
+    #   region: Boolean mask the size & shape of power that is True inside rectangle and false elsewhere
+
+    # Create boolean mask, initialized as False
+    region = np.zeros(power.shape, dtype=bool)
+
+    # Per Zink & Vincent (2001), the limit is 25% of peak power
+    powerLimit = 0.25 * power[peak[0], peak[1]]
+
+    # Get the row and column of the peak
+    row = power[peak[0], :]
+    col = power[:, peak[1]]
+
+    # Create an array with coordinates of local minima on the row
+    rowMins = np.array(argrelextrema(row, np.less))
+    # Append all coordinates where the row is less than the power limit
+    rowMins = np.append(rowMins, np.where(row <= powerLimit))
+    # Add the peak itself, as well as the boundaries in case peak is near the edge
+    rowMins = np.sort(np.append(rowMins, [0, peak[1], power.shape[1]-1]))
+    # Get the two values on either side of the peak in the sorted array of indices
+    cols = np.arange( rowMins[np.where(rowMins == peak[1])[0]-1], rowMins[np.where(rowMins == peak[1])[0]+1] + 1).tolist()
+
+    # Repeat for the column, to get the boundaries for the rows
+    colMins = np.array(argrelextrema(col, np.less))
+    colMins = np.append(colMins, np.where(col <= powerLimit))
+    colMins = np.sort(np.append(colMins, [0, peak[0], power.shape[0]-1]))
+    rows = np.arange(colMins[np.where(colMins == peak[0])[0] - 1][0], colMins[np.where(colMins == peak[0])[0] + 1][0] + 1).tolist()
+
+    # Set the boolean mask to true inside those boundaries
+    region[np.ix_(rows, cols)] = True
+
+    return region
+
+
+def findPeakContour(power, peak):
+    # FUNCTION PURPOSE: Trace a contour line around a local maximum in the power surface,
+    #                   possibly following Murphy (2014). The paper is unclear, and I still
+    #                   need to investigate the IDL code to find the exact method.
+    #
+    # INPUTS:
+    #   power: Numpy 2d array containing sum of squares of wavelet transformed wind speeds
+    #   peak: Numpy array containing row and column coordinates of local maximum in power surface
+    #
+    # OUTPUTS:
+    #   region: Boolean mask the size & shape of power that is True inside contour and false elsewhere
+
+    # Create boolean mask, initialized as False
+    region = np.zeros(power.shape, dtype=bool)
+
+    # If for some reason this method can't isolate a region surrounding the peak,
+    # set the peak itself to True so that it will be removed from list of peaks
+    region[peak[0], peak[1]] = True
+
+    # Find cut-off power level, based on height of peak
+    # No one level works for all peaks, so iterate through different contours until one works
+    relativePowerLevels = np.arange(0.55, 1.00, 0.05)  # Try levels 55%, 60%, 65%, ... 90%, 95%
+    absolutePowerLevels = power[peak[0], peak[1]] * relativePowerLevels
+
+    for level in absolutePowerLevels:
+
+        # Find all the contours at cut-off level
+        contours = find_contours(power, level)
+
+        # Loop through contours to find the one surrounding the peak
+        for contour in contours:
+
+            # If the contour runs into multiple edges, skip as it's not worth trying
+            if contour[0, 0] != contour[-1, 0] and contour[0, 1] != contour[-1, 1]:
+                continue
+
+            # Use matplotlib.path.Path to create a path
+            p = path.Path(contour)
+
+            # Check to see if the peak is inside the closed loop of the contour path
+            if p.contains_point(peak):
+
+                # If it is, set the boundary path to True
+                region[contour[:, 0].astype(int), contour[:, 1].astype(int)] = True
+
+                # Then fill in the contour to create mask surrounding peak
+                region = binary_fill_holes(region)
+
+                # The method is now done, so return region
+                return region
+
+    # If this method couldn't find a contour that surrounded the peak,
+    # then return the boolean mask that is False except for the peak itself
+    return region
+
+
+########## STOKES PARAMETERS ANALYSIS ##########
 
 def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # FUNCTION PURPOSE: Get physical wave parameters based on the reconstructed time series of the potential wave
