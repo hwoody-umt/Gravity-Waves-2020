@@ -51,16 +51,30 @@ for file in os.listdir( userInput.get('dataSource') ):
         displayProgress( peaks, len(plottingInfo.get('peaks')) )
 
         # Identify the region surrounding the peak
-        region = findPeakRectangle( wavelets.get('power'), peaks[0])
+        # using the rectangle method from Zink & Vincent (2001)
+        regionRectangle = findPeakRectangle( wavelets.get('power'), peaks[0] )
+        # and with the contour method from Murphy (2014)
+        regionContour = findPeakContour( wavelets.get('power'), peaks[0] )
 
-        #if region.sum().sum() <= 1:  # Only found the peak, not the region
-        #    continue  # Don't bother analyzing the single cell
 
-        # Get inverted regional maximums
-        wave = invertWaveletTransform( region, wavelets )
+        # Get inverted regional maximums from both methods
+        waveRectangle = invertWaveletTransform( regionRectangle, wavelets )
+        waveContour = invertWaveletTransform( regionContour, wavelets )
 
         # Perform analysis to find wave information
-        parameters = getParameters(data, wave, spatialResolution, peaks[0, 1], wavelets.get('wavelengths')[peaks[0, 0]])
+        parametersRectangle = getParameters(data, waveRectangle, spatialResolution, peaks[0, 1], wavelets.get('wavelengths')[peaks[0, 0]])
+        parametersContour = getParameters(data, waveContour, spatialResolution, peaks[0, 1], wavelets.get('wavelengths')[peaks[0, 0]])
+
+        # Pick the method that performed the best
+        if parametersRectangle and parametersContour:
+            # If both methods got results, have the user pick based on the hodographs
+            parameters, region = compareMethods(waveRectangle, waveContour, parametersRectangle, parametersContour, regionRectangle, regionContour)
+        elif parametersContour:
+            parameters = parametersContour
+            region = regionContour
+        else:
+            parameters = parametersRectangle
+            region = regionRectangle
 
         # Update pertinent variables to save current wave parameters, increment counters, and shorten peaks list
         waves, plottingInfo, peaks = saveParametersInLoop(waves, plottingInfo, parameters, region, peaks)

@@ -243,6 +243,71 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     #plt.close()
 
 
+def compareMethods(waveR, waveC, parametersR, parametersC, regionR, regionC):
+    # FUNCTION PURPOSE: Get user input to compare results from two methods based on their hodographs
+    #
+    # INPUTS:
+    #   waveR:
+    #   waveC:
+    #   parametersR:
+    #   parametersC:
+    #   regionR:
+    #   regionC:
+    #
+    # OUTPUTS:
+    #   parameters:
+    #   region:
+
+
+    # First, filter based on half-max wind variance, from Murphy (2014)
+
+    # Calculate the wind variance of the wave
+    windVarianceR = np.abs(waveR.get('uTrim')) ** 2 + np.abs(waveR.get('vTrim')) ** 2
+    windVarianceC = np.abs(waveC.get('uTrim')) ** 2 + np.abs(waveC.get('vTrim')) ** 2
+
+    # Get rid of values below half-power, per Murphy (2014)
+    uR = waveR.get('uTrim').copy()[windVarianceR >= 0.5 * np.max(windVarianceR)]
+    vR = waveR.get('vTrim').copy()[windVarianceR >= 0.5 * np.max(windVarianceR)]
+    uC = waveR.get('uTrim').copy()[windVarianceC >= 0.5 * np.max(windVarianceC)]
+    vC = waveR.get('vTrim').copy()[windVarianceC >= 0.5 * np.max(windVarianceC)]
+
+    # Discard complex components, which aren't needed for hodograph
+    uR = uR.real
+    vR = vR.real
+    uC = uC.real
+    vC = vC.real
+
+    # Now, create hodograph subplots for easy comparison
+    fig, ax = plt.subplots(1, 2)
+    fig.suptitle('Which Hodograph Looks Better?')
+    ax[0].plot(uR, vR)
+    ax[0].set_title('Rectangle Peak Trace Method')
+    ax[1].plot(uC, vC)
+    ax[1].set_title('Contour Peak Trace Method')
+    plt.show()
+
+    # Get user input for selection
+    print("\r\nPlease enter the name of the method that showed a more elliptical shape:")
+
+    # userInput starts as empty string
+    userInput = ""
+
+    # While userInput remains empty, get input
+    while not userInput:
+        userInput = input()
+        # If input isn't either "Y" or "N", set userInput to empty string
+        if lower(userInput) != "rectangle" and lower(userInput) != "contour":
+            print("Please enter either 'rectangle' or 'contour':")
+            # Console output to let user know requirements
+            userInput = ""
+
+    # Now that the loop has finished, return True for "Y" and False for "N"
+    if lower(userInput) == "rectangle":
+        return parametersR, regionR
+    else:
+        return parametersC, regionC
+
+
 ########## DATA INPUT/MANAGEMENT ##########
 
 def cleanData(file, path):
