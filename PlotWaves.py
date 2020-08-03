@@ -110,10 +110,10 @@ for file in os.listdir( userInput.get('dataSource') ):
         plt.quiver(X, Y, U, V, color='red')
 
     X = flightPath.get('time')
-    X = [datetime.datetime.strptime(date.split('.', 1)[0], '%Y-%m-%d %H:%M:%S') for date in X]
+    X = [datetime.datetime.strptime(date[0].split('.', 1)[0], '%Y-%m-%d %H:%M:%S') for date in X]
 
     Y = flightPath.get('alt')
-    Y = np.array(Y) / 1000  # convert to km
+    Y = np.array(Y).reshape(len(X)) / 1000  # convert to km
 
     if userInput.get('plot3D'):
         X = mdates.date2num(X)
@@ -134,7 +134,7 @@ else:
 
 if userInput.get('plot3D'):
     ax.set_zlabel("Altitude [km]")
-    plt.ylim(-10,10)
+    plt.ylim(-10, 10)
     ax.set_yticks([])
     ax.set_yticks([], minor=True)
 else:

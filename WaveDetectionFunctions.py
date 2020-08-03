@@ -247,16 +247,13 @@ def compareMethods(waveR, waveC, parametersR, parametersC, regionR, regionC):
     # FUNCTION PURPOSE: Get user input to compare results from two methods based on their hodographs
     #
     # INPUTS:
-    #   waveR:
-    #   waveC:
-    #   parametersR:
-    #   parametersC:
-    #   regionR:
-    #   regionC:
+    #   wave: Dictionary containing wavelet transformed surfaces, for rectangle (R) and contour (C) methods
+    #   parameters: Dictionary containing wave parameters, for R and C methods
+    #   region: Boolean mask tracing the wave on the power surface, for R and C methods
     #
     # OUTPUTS:
-    #   parameters:
-    #   region:
+    #   parameters: Dictionary containing wave parameters, for the chosen method
+    #   region: Boolean mask tracing the wave on the power surface, for the chosen method
 
 
     # First, filter based on half-max wind variance, from Murphy (2014)
