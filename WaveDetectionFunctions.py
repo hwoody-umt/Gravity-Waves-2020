@@ -268,7 +268,7 @@ def compareMethods(waveR, waveC, parametersR, parametersC, regionR, regionC):
     uC = waveR.get('uTrim').copy()[windVarianceC >= 0.5 * np.max(windVarianceC)]
     vC = waveR.get('vTrim').copy()[windVarianceC >= 0.5 * np.max(windVarianceC)]
 
-    # Discard complex components, which aren't needed for hodograph
+    # Discard imaginary components, which aren't needed for hodograph
     uR = uR.real
     vR = vR.real
     uC = uC.real
@@ -291,15 +291,16 @@ def compareMethods(waveR, waveC, parametersR, parametersC, regionR, regionC):
 
     # While userInput remains empty, get input
     while not userInput:
-        userInput = input()
-        # If input isn't either "Y" or "N", set userInput to empty string
-        if lower(userInput) != "rectangle" and lower(userInput) != "contour":
+        userInput = lower(input())
+
+        # If input isn't either "rectangle" or "contour", set userInput to empty string
+        if userInput != "rectangle" and userInput != "contour" and userInput != "r" and userInput != "c":
+            # Console output to let user know requirements if they don't answer right
             print("Please enter either 'rectangle' or 'contour':")
-            # Console output to let user know requirements
             userInput = ""
 
-    # Now that the loop has finished, return True for "Y" and False for "N"
-    if lower(userInput) == "rectangle":
+    # Now that the loop has finished, return correct parameters and region
+    if userInput == "rectangle" or userInput == "r":
         return parametersR, regionR
     else:
         return parametersC, regionC
@@ -366,6 +367,7 @@ def cleanData(file, path):
     # Find the end of usable (ascent) data
     badRows = []  # Index, soon to contain any rows to be removed
     for row in range(data.shape[0]):  # Iterate through rows of data
+        # noinspection PyChainedComparisons
         if not str(data['Rs'].loc[row]).replace('.', '', 1).isdigit():  # Check for nonnumeric or negative rise rate
             badRows.append(row)
         elif row > 0 and np.diff(data['Alt'])[row-1] <= 0:  # Check for stable or decreasing altitude (removes rise rate = 0)
