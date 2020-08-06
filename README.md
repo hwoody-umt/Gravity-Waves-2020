@@ -1,14 +1,14 @@
-# Gravity-Waves-2020
+## Gravity-Waves-2020
 
 
- Developed by Keaton Blair and Hannah Woody, MSGC
+ *Developed by Keaton Blair and Hannah Woody, MSGC*
 
 
  This folder contains python code to detect and analyze gravity
  waves from radiosonde data, as well as sample data and output.
 
 
- Descriptions of the python files are as follows:
+### Descriptions of the python files are as follows:
 
 
  CalculatePBL.py:
@@ -50,7 +50,7 @@
  the top of DetectWaves.py to match the location of this file.
 
 
- Descriptions of the folders are as follows:
+### Descriptions of the folders are as follows:
 
 
  Summer_2020_Flights:
