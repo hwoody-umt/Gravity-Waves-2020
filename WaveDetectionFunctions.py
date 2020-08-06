@@ -521,6 +521,7 @@ def waveletTransform(data, spatialResolution, wavelet):
 
     # Subtract rolling mean (assumed to be background wind)
     # Up next, try a 2-3 order polynomial fit instead and see if there's a big difference
+    # Also, try "fifth-order Butterworth filter" from Zink & Vincent (2001) section 3.2
     N = int(len(data['Alt']) / 4)
     # Also, figure out what min_periods is really doing and make a reason for picking a good value
     rMean = pd.Series(u).rolling(window=N, min_periods=int(N/2), center=True).mean()
@@ -892,24 +893,25 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # OUTPUTS:
     #   waveProp: Dictionary of wave characteristics,
 
+
     # Calculate the wind variance of the wave
     windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2
 
-    # Get rid of values below max half-power, per Murphy (2014)
+    # Get rid of values below max half-power, per Zink & Vincent (2001) section 2.3 paragraph 3
     uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
 
     # Separate imaginary/real parts
     vHilbert = vTrim.copy().imag
-    uvComp = [uTrim.copy(), vTrim.copy()]
+    uvComp = [uTrim.copy(), vTrim.copy()]  # Combine into a matrix for easy rotation along propagation direction
     uTrim = uTrim.real
     vTrim = vTrim.real
 
-    # Potential temperature
+    # Potential temperature, needs to be appropriately sourced and verified
     pt = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
 
-    # Stokes parameters, still need some verification
+    # Stokes parameters from Murphy (2014) appendix A
     I = np.mean(uTrim ** 2) + np.mean(vTrim ** 2)
     D = np.mean(uTrim ** 2) - np.mean(vTrim ** 2)
     P = np.mean(2 * uTrim * vTrim)
@@ -918,21 +920,21 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
 
     # Check the covariance to perform additional filtering
 
-    # Tests, I need to figure out why these make sense
+    # Tests to rule out waves that don't make sense. These restrictions seem fairly lax, so we should look at others
     if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
         return {}
 
-
+    # Find the angle of propagation, from Vincent & Fritts (1987) Equation 15
     theta = 0.5 * np.arctan2(P, D)  # arctan2 has a range of [-pi, pi], as opposed to arctan's range of [-pi/2, pi/2]
 
 
-    # Classic 2x2 rotation matrix
+    # Rotate by theta so that u and v components of 'uvComp' are parallel/perpendicular to propogation direction
     rotate = [[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]]
-    uvComp = np.dot(rotate, uvComp)  # Rotate so u and v components parallel/perpendicular to propogation direction
+    uvComp = np.dot(rotate, uvComp)
 
-    # From Murphy (2014) Table 1, also referenced in Zink & Vincent
+    # From Murphy (2014) table 1, and Zink & Vincent (2001) equation A10
     axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])
-    # Alternative method that yields similar results (from Neelakantan et. al, 2019, Equation 8) is
+    # Alternative method that yields similar results (from Neelakantan et. al, 2019, Equation 8) is:
     # axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
 
 
@@ -943,8 +945,13 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # Coriolis frequency
     coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
 
+    # Intrinsic frequency, from Murphy (2014) table 1
     intrinsicF = coriolisF * axialRatio
 
+    # From Zink & Vincent (2001), N^2 = - g/p0 * np.gradient(p0/Alt), where p0 is density
+    # According to wikipedia (https://en.wikipedia.org/wiki/Brunt%E2%80%93V%C3%A4is%C3%A4l%C3%A4_frequency),
+    # the above equation is for water, and the atmospheric equation below is correct. However, this needs to be
+    # verified with peer reviewed sources to confirm
     bvF2 = np.abs( 9.81 / pt * np.gradient(pt, spatialResolution) )  # Brunt-vaisala frequency squared
 
     # This code finds the mean across region bvMean = np.mean(np.array(bvF2)[np.nonzero(region.sum(axis=0))])
@@ -971,27 +978,31 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # Altitude
     # Horizontal phase speed
     # Vertical wavelength
+    # (See Murphy (2014) table 3 for ground-based)
+
+
+    # Intrinsic values from Murphy (2014) table 2
 
     # Vertical wavenumber [1/m]
     m = 2 * np.pi / wavelength
     # Horizontal wavenumber [1/m]
-    kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvPeak) * (intrinsicF ** 2 / coriolisF ** 2 - 1))
+    kh = np.sqrt(((coriolisF ** 2 * m ** 2) / bvPeak) * (intrinsicF ** 2 / coriolisF ** 2 - 1))  # Murphy (2014) Eqn B2
     # Intrinsic vertical wave velocity [m/s]
-    intrinsicVerticalGroupVel = - (1 / (intrinsicF * m)) * (intrinsicF ** 2 - coriolisF ** 2)
-    # Same [1/m]
-    #zonalWaveNumber = kh * np.sin(theta)
-    # Same [1/m]
-    #meridionalWaveNumber = kh * np.cos(theta)
-    # Same [m/s]
-    intrinsicVerticalPhaseSpeed = intrinsicF / m
-    # Same [m/s]
-    intrinsicHorizPhaseSpeed = intrinsicF / kh
-    # Same [m/s]
-    intrinsicZonalGroupVel = kh * np.sin(theta) * bvPeak / (intrinsicF * m ** 2)
-    # Same [m/s]
-    intrinsicMeridionalGroupVel = kh * np.cos(theta) * bvPeak / (intrinsicF * m ** 2)
-    # Same [m/s]
-    intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel ** 2 + intrinsicMeridionalGroupVel ** 2)
+    intrinsicVerticalGroupVel = - (1 / (intrinsicF * m)) * (intrinsicF ** 2 - coriolisF ** 2)  # Murphy (2014) Eqn B5
+
+    #zonalWaveNumber = kh * np.sin(theta)  # [1/m]
+
+    #meridionalWaveNumber = kh * np.cos(theta)  # [1/m]
+
+    intrinsicVerticalPhaseSpeed = intrinsicF / m  # [m/s]
+
+    intrinsicHorizPhaseSpeed = intrinsicF / kh  # [m/s]
+
+    intrinsicZonalGroupVel = kh * np.sin(theta) * bvPeak / (intrinsicF * m ** 2)  # [m/s]
+
+    intrinsicMeridionalGroupVel = kh * np.cos(theta) * bvPeak / (intrinsicF * m ** 2)  # [m/s]
+
+    intrinsicHorizGroupVel = np.sqrt(intrinsicZonalGroupVel ** 2 + intrinsicMeridionalGroupVel ** 2)  # [m/s]
     # Horizontal wavelength [m]
     lambda_h = 2 * np.pi / kh
     # Altitude of wave peak
