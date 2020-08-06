@@ -1,6 +1,8 @@
+from io import StringIO
 import numpy as np  # Numbers (like pi) and math
 import os  # File reading and input
 import WaveDetectionFunctions as fun
+import pandas as pd
 
 
 ########## Function definitions, to be used later ##########
@@ -140,6 +142,87 @@ def layerStability(hi, pot):
     else:
         return "Detected neutral residual layer"
 
+def cleanData(file, path):
+    # FUNCTION PURPOSE: Read a data file, and if the file contains GRAWMET profile data,
+    #                   then clean the data and return the results
+    #
+    # INPUTS:
+    #   file: The filename of the data file to read
+    #   path: The path (absolute or relative) to the file
+    #
+    # OUTPUTS:
+    #   data: Pandas DataFrame containing the time [s], altitude [m], temperature [deg C],
+    #           pressure [hPa], wind speed [m/s], wind direction [deg], latitude [decimal deg],
+    #           and longitude [decimal deg] of the radiosonde flight
+
+
+    # If file is not a txt file, end now
+    if not file.endswith(".txt"):
+        return pd.DataFrame()  # Empty data frame means end analysis
+
+
+    # Open and investigate the file
+    contents = ""
+    isProfile = False  # Check to see if this is a GRAWMET profile
+    f = open(os.path.join(path, file), 'r')
+    print("\nOpening file "+file+":")
+    for line in f:  # Iterate through file, line by line
+        if line.rstrip() == "Profile Data:":
+            isProfile = True  # We found the start of the real data in GRAWMET profile format
+            contents = f.read()  # Read in rest of file, discarding header
+            print("File contains GRAWMET profile data")
+            break
+    f.close()  # Need to close opened file
+
+    # If we checked the whole file and didn't find it, end analysis now.
+    if not isProfile:
+        print("File "+file+" is either not a GRAWMET profile, or is corrupted.")
+        return pd.DataFrame()
+
+    # Read in the data and perform cleaning
+
+    # Need to remove space so Virt. Temp reads as one column, not two
+    contents = contents.replace("Virt. Temp", "Virt.Temp")
+    # Break file apart into separate lines
+    contents = contents.split("\n")
+    contents.pop(1)  # Remove units so that we can read table
+    index = -1  # Used to look for footer
+    for i in range(0, len(contents)):  # Iterate through lines
+        if contents[i].strip() == "Tropopauses:":
+            index = i  # Record start of footer
+    if index >= 0:  # Remove footer, if found
+        contents = contents[:index]
+    contents = "\n".join(contents)  # Reassemble string
+
+    # Read in the data
+    data = pd.read_csv(StringIO(contents), delim_whitespace=True)
+    del contents  # Free up a little memory
+
+    # Find the end of usable (ascent) data
+    badRows = []  # Index, soon to contain any rows to be removed
+    for row in range(data.shape[0]):  # Iterate through rows of data
+        # noinspection PyChainedComparisons
+        if not str(data['Rs'].loc[row]).replace('.', '', 1).isdigit():  # Check for nonnumeric or negative rise rate
+            badRows.append(row)
+        # Check for stable or decreasing altitude (removes rise rate = 0)
+        elif row > 0 and np.diff(data['Alt'])[row-1] <= 0:
+            badRows.append(row)
+        else:
+            for col in range(data.shape[1]):  # Iterate through every cell in row
+                if data.iloc[row, col] == 999999.0:  # This value appears to be GRAWMET's version of NA
+                    badRows.append(row)  # Remove row if 999999.0 is found
+                    break
+
+    if len(badRows) > 0:
+        print("Dropping "+str(len(badRows))+" rows containing unusable data")
+        data = data.drop(data.index[badRows])  # Actually remove any necessary rows
+    data.reset_index(drop=True, inplace=True)  # Return data frame index to [0,1,2,...,nrow]
+
+    # Get rid of extraneous columns that won't be used for further analysis
+    essentialData = ['Time', 'Alt', 'T', 'P', 'Ws', 'Wd', 'Dewp.']
+    data = data[essentialData]
+
+    return data  # return cleaned pandas data frame
 
 ########## Actual Code ##########
 
@@ -150,17 +233,19 @@ saveData = fun.getUserInputTF("Would you like to save PBL output to the GRAWMET 
 for file in os.listdir(dataSource):
 
     # Read the file to gather data
-    data = fun.cleanData(file, dataSource)
+    data = cleanData(file, dataSource)
 
     if data.empty:  # File is not a GRAWMET profile
-        print("File does not appear to be a GRAWMET profile, quitting analysis...")
+        print("File does not appear to be a GRAWMET profile, quitting analysis...\n")
         continue  # Skip to next file and try again
 
-    # Get launchDateTime for interpolateData() function, ignore default pblHeight
+    # Get launchDateTime for interpolateData() function
     launchDateTime, pblHeight = fun.readFromData(file, dataSource)
-    del pblHeight
+    # If PBL height isn't the default 1500 meters, then file has previously been analyzed, so skip
+    if pblHeight != 1500:
+        continue
 
-    spatialResolution = 1  # meters in between uniformly distributed data points, must be pos integer
+    spatialResolution = 5  # meters in between uniformly distributed data points, must be pos integer
     # Interpolate to clean up the data, fill holes, and make a uniform spatial distribution of data points
     data = fun.interpolateData( data, spatialResolution, 0, launchDateTime )  # Start at zero meters to find PBL
 
@@ -198,10 +283,10 @@ for file in os.listdir(dataSource):
 
     # CALL THE FUNCTIONS YOU WANT TO USE
     # Only functions that are called in this section will display in the output data
-    pblHeightRI = fun.pblRI(vpt, u, v, hi)  # RI method
-    pblHeightVPT = fun.pblVPT(vpt, hi)  # Virtual potential temperature method
-    pblHeightPT = fun.pblPT(hi, pot)  # Potential temperature method
-    pblHeightSH = fun.pblSH(hi, rvv)  # Specific humidity method
+    pblHeightRI = float(pblRI(vpt, u, v, hi))  # RI method
+    pblHeightVPT = float(pblVPT(vpt, hi))  # Virtual potential temperature method
+    pblHeightPT = float(pblPT(hi, pot))  # Potential temperature method
+    pblHeightSH = float(pblSH(hi, rvv))  # Specific humidity method
 
     # Find min, max, and median PBL values
     pbls = [pblHeightSH, pblHeightVPT, pblHeightPT, pblHeightRI]
@@ -210,15 +295,14 @@ for file in os.listdir(dataSource):
     pblHeightMedian = np.median(pbls)  # Median is the best
 
     print("Calculated PBL height (min, median, max) of (" + str(pblHeightMin) + ", " + str(pblHeightMedian) + ", " + str(pblHeightMax) + ") meters above ground level.")
-    print(fun.layerStability(hi, pot))  # Print the layer stability, while we're at it
 
     ##### Now write max PBL height to profile file
 
     if saveData:
+        stringToWrite = "Min PBL height:\t" + str(pblHeightMin) + "\t"
+        stringToWrite += "Median PBL height:\t" + str(pblHeightMedian) + "\t"
+        stringToWrite += "Max PBL height:\t" + str(pblHeightMax) + "\n\n"
 
-        stringToWrite = "Max PBL height:\t" + str(pblHeightMax) + "\t"
-        stringToWrite += "Min PBL height:\t" + str(pblHeightMin) + "\t"
-        stringToWrite += "Median PBL height:\t" + str(pblHeightMedian) + "\n\n"
 
         contents = []  # Initialize empty list
 
@@ -229,7 +313,7 @@ for file in os.listdir(dataSource):
         beginIndex = beginIndex[0]
 
         # Insert pbl information into contents before main section begins
-        #contents.insert(beginIndex, stringToWrite)
+        contents.insert(beginIndex, stringToWrite)
         contents.insert(beginIndex, "PBL Information:\n")
 
         with open(os.path.join(dataSource, file), "w") as f:

@@ -5,7 +5,7 @@
 import numpy as np  # Numbers (like pi) and math
 from numpy.core.defchararray import lower  # For some reason I had to import this separately
 import matplotlib.pyplot as plt  # Easy plotting
-import matplotlib.path as path  # Used for finding the peak region
+import matplotlib.path as mpath  # Used for finding the peak region
 import pandas as pd  # Convenient data formatting, and who doesn't want pandas
 import os  # File reading and input
 from io import StringIO  # Used to run strings through input/output functions
@@ -370,11 +370,12 @@ def cleanData(file, path):
         # noinspection PyChainedComparisons
         if not str(data['Rs'].loc[row]).replace('.', '', 1).isdigit():  # Check for nonnumeric or negative rise rate
             badRows.append(row)
-        elif row > 0 and np.diff(data['Alt'])[row-1] <= 0:  # Check for stable or decreasing altitude (removes rise rate = 0)
+        # Check for stable or decreasing altitude (removes rise rate = 0)
+        elif row > 0 and np.diff(data['Alt'])[row-1] <= 0:
             badRows.append(row)
         else:
             for col in range(data.shape[1]):  # Iterate through every cell in row
-                if data.iloc[row, col] == 999999.0:  # This value is GRAWMET's version of NA
+                if data.iloc[row, col] == 999999.0:  # This value appears to be GRAWMET's version of NA
                     badRows.append(row)  # Remove row if 999999.0 is found
                     break
 
@@ -415,6 +416,7 @@ def readFromData(file, path):
 
         # If line has expected beginning, try to get datetime from file
         if line.rstrip() == "Flight Information:":
+            # noinspection PyBroadException
             try:
                 dateTimeInfo = f.readline().split()
                 dateTimeInfo = ' '.join(dateTimeInfo[2:6] + [dateTimeInfo[8]])
@@ -425,8 +427,9 @@ def readFromData(file, path):
 
         # If line has expected beginning, try to get PBL info
         if line.rstrip() == "PBL Information:":
+            # noinspection PyBroadException
             try:
-                pblHeight = float(f.readline().split()[3])
+                pblHeight = float(f.readline().split("\t")[3])
             except:
                 # If an error is encountered, print a statement to the console and continue
                 print("Error reading flight PBL info, defaulting to 1500 meters")
@@ -532,7 +535,9 @@ def waveletTransform(data, spatialResolution, wavelet):
     padding = 1  # Pad the data with zeros to allow convolution to edge of data
     scaleResolution = 0.125/8  # This controls the spacing in between scales
     smallestScale = 2 * spatialResolution  # This number is the smallest wavelet scale
-    howManyScales = 10/scaleResolution  # This number is how many scales to compute
+
+    # Currently not used, pass this to parameter J1 in continuousWaveletTransform()
+    # howManyScales = 10/scaleResolution  # This number is how many scales to compute
     # Check Zink & Vincent section 3.2 par. 1 to see their scales/wavelengths
 
     # Lay groundwork for inversions, outside of looping over local max. in power surface
@@ -541,11 +546,17 @@ def waveletTransform(data, spatialResolution, wavelet):
 
     # Now, do the actual wavelet transform using library from Torrence & Compo (1998)
     print("Performing wavelet transform on U... (1/3)", end='')  # Console output, to be updated
-    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefU, periods, scales, coi = continuousWaveletTransform(u, spatialResolution, pad=padding, dj=scaleResolution,
+                                                             s0=smallestScale, mother=wavelet)
+
     print("\rPerforming wavelet transform on V... (2/3)", end='')  # Update to keep user informed
-    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefV, periods, scales, coi = continuousWaveletTransform(v, spatialResolution, pad=padding, dj=scaleResolution,
+                                                             s0=smallestScale, mother=wavelet)
+
     print("\rPerforming wavelet transform on T... (3/3)", end='')  # Final console output for wavelet transform
-    coefT, periods, scales, coi = continuousWaveletTransform(t, spatialResolution, pad=padding, dj=scaleResolution, s0=smallestScale, mother=wavelet)  # Continuous morlet wavelet transform
+    coefT, periods, scales, coi = continuousWaveletTransform(t, spatialResolution, pad=padding, dj=scaleResolution,
+                                                             s0=smallestScale, mother=wavelet)
+
 
     # Power surface is sum of squares of u and v wavelet transformed surfaces
     power = abs(coefU) ** 2 + abs(coefV) ** 2  # abs() gets magnitude of complex number
@@ -794,13 +805,15 @@ def findPeakRectangle(power, peak):
     # Add the peak itself, as well as the boundaries in case peak is near the edge
     rowMins = np.sort(np.append(rowMins, [0, peak[1], power.shape[1]-1]))
     # Get the two values on either side of the peak in the sorted array of indices
-    cols = np.arange( rowMins[np.where(rowMins == peak[1])[0]-1], rowMins[np.where(rowMins == peak[1])[0]+1] + 1).tolist()
+    cols = np.arange( rowMins[np.where(rowMins == peak[1])[0]-1],
+                      rowMins[np.where(rowMins == peak[1])[0]+1] + 1).tolist()
 
     # Repeat for the column, to get the boundaries for the rows
     colMins = np.array(argrelextrema(col, np.less))
     colMins = np.append(colMins, np.where(col <= powerLimit))
     colMins = np.sort(np.append(colMins, [0, peak[0], power.shape[0]-1]))
-    rows = np.arange(colMins[np.where(colMins == peak[0])[0] - 1][0], colMins[np.where(colMins == peak[0])[0] + 1][0] + 1).tolist()
+    rows = np.arange(colMins[np.where(colMins == peak[0])[0] - 1][0],
+                     colMins[np.where(colMins == peak[0])[0] + 1][0] + 1).tolist()
 
     # Set the boolean mask to true inside those boundaries
     region[np.ix_(rows, cols)] = True
@@ -845,7 +858,7 @@ def findPeakContour(power, peak):
                 continue
 
             # Use matplotlib.path.Path to create a path
-            p = path.Path(contour)
+            p = mpath.Path(contour)
 
             # Check to see if the peak is inside the closed loop of the contour path
             if p.contains_point(peak):
@@ -882,12 +895,12 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # Calculate the wind variance of the wave
     windVariance = np.abs(wave.get('uTrim')) ** 2 + np.abs(wave.get('vTrim')) ** 2
 
-    # Get rid of values below half-power, per Murphy (2014)
+    # Get rid of values below max half-power, per Murphy (2014)
     uTrim = wave.get('uTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     vTrim = wave.get('vTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
     tTrim = wave.get('tTrim').copy()[windVariance >= 0.5 * np.max(windVariance)]
 
-    # Seperate imaginary/real parts
+    # Separate imaginary/real parts
     vHilbert = vTrim.copy().imag
     uvComp = [uTrim.copy(), vTrim.copy()]
     uTrim = uTrim.real
@@ -919,7 +932,8 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
 
     # From Murphy (2014) Table 1, also referenced in Zink & Vincent
     axialRatio = np.linalg.norm(uvComp[0]) / np.linalg.norm(uvComp[1])
-    # Alternative method that yields very similar results is axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
+    # Alternative method that yields similar results (from Neelakantan et. al, 2019, Equation 8) is
+    # axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
 
 
     gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
@@ -997,14 +1011,13 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
         'Date and Time [UTC]': timeOfDetection,
         'Vertical wavelength [km]': (2 * np.pi / m) / 1000,
         'Horizontal wavelength [km]': lambda_h / 1000,
-        'Angle of wave [deg]': theta * 180 / np.pi,
+        'Propagation direction [deg]': theta * 180 / np.pi,
         'Axial ratio [no units]': axialRatio,
         'Intrinsic vertical group velocity [m/s]': intrinsicVerticalGroupVel,
         'Intrinsic horizontal group velocity [m/s]': intrinsicHorizGroupVel,
         'Intrinsic vertical phase speed [m/s]': intrinsicVerticalPhaseSpeed,
         'Intrinsic horizontal phase speed [m/s]': intrinsicHorizPhaseSpeed,
-        'Degree of Polarization [no units]': degPolar,
-        'Covariance between parallel and phase shifted perpendicular wind speed [m^2(s^-2)]': Q
+        'Degree of Polarization [no units]': degPolar
     }
 
     return waveProp  # Dictionary of wave characteristics

@@ -1,6 +1,7 @@
 from scipy.special._ufuncs import gammainc, gamma
 import numpy as np
 from scipy.optimize import fminbound
+
 __author__ = 'Evgeniya Predybaylo'
 
 
@@ -26,7 +27,7 @@ __author__ = 'Evgeniya Predybaylo'
 #  Boulder, CO 80301, USA                 Boulder, CO 80305-3328, USA
 #  E-mail: chris[AT]rsinc[DOT]com         E-mail: compo[AT]colorado[DOT]edu
 #
-#-------------------------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------
 
 
 # # WAVELET  1D Wavelet transform with optional significance testing
@@ -104,7 +105,7 @@ def wavelet(Y, dt, pad=False, dj=-1, s0=-1, J1=-1, mother=-1, param=-1):
     if mother == -1:
         mother = 'MORLET'
 
-    #....construct time series to analyze, pad if necessary
+    # ....construct time series to analyze, pad if necessary
     x = Y - np.mean(Y)
     if pad:
         base2 = np.fix(np.log(n1) / np.log(2) + 0.4999)  # power of 2 nearest to N
@@ -112,33 +113,34 @@ def wavelet(Y, dt, pad=False, dj=-1, s0=-1, J1=-1, mother=-1, param=-1):
 
     n = len(x)
 
-    #....construct wavenumber array used in transform [Eqn(5)]
+    # ....construct wavenumber array used in transform [Eqn(5)]
     kplus = np.arange(1, np.fix(n / 2 + 1))
     kplus = (kplus * 2 * np.pi / (n * dt))
     kminus = (-(kplus[0:-1])[::-1])
     k = np.concatenate(([0.], kplus, kminus))
 
-    #....compute FFT of the (padded) time series
+    # ....compute FFT of the (padded) time series
     f = np.fft.fft(x)  # [Eqn(3)]
 
-    #....construct SCALE array & empty PERIOD & WAVE arrays
-    j = np.arange(0, J1+1)
+    # ....construct SCALE array & empty PERIOD & WAVE arrays
+    j = np.arange(0, J1 + 1)
     scale = s0 * 2. ** (j * dj)
     wave = np.zeros(shape=(int(J1 + 1), n), dtype=complex)  # define the wavelet array
 
     # loop through all scales and compute transform
-    for a1 in range(0, int(J1+1)):
+    for a1 in range(0, int(J1 + 1)):
         daughter, fourier_factor, coi, dofmin = wave_bases(mother, k, scale[a1], param)
         wave[a1, :] = np.fft.ifft(f * daughter)  # wavelet transform[Eqn(4)]
 
     period = fourier_factor * scale  # [Table(1)]
     coi = coi * dt * np.concatenate((np.insert(np.arange(int((n1 + 1) / 2 - 1)), [0], [1E-5]),
-            np.insert(np.flipud(np.arange(0, n1 / 2 - 1)), [-1], [1E-5])))  # COI [Sec.3g]
+                                     np.insert(np.flipud(np.arange(0, n1 / 2 - 1)), [-1], [1E-5])))  # COI [Sec.3g]
     wave = wave[:, :n1]  # get rid of padding before returning
 
     return wave, period, scale, coi
 
-#-------------------------------------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------------------------------------
 # WAVE_BASES  1D Wavelet functions Morlet, Paul, or DOG
 #
 #  DAUGHTER,FOURIER_FACTOR,COI,DOFMIN = wave_bases(MOTHER,K,SCALE,PARAM)
@@ -175,7 +177,7 @@ def wave_bases(mother, k, scale, param):
         k0 = np.copy(param)
         expnt = -(scale * k - k0) ** 2 / 2. * kplus
         norm = np.sqrt(scale * k[1]) * (np.pi ** (-0.25)) * \
-                np.sqrt(n)  # total energy=N   [Eqn(7)]
+               np.sqrt(n)  # total energy=N   [Eqn(7)]
         daughter = norm * np.exp(expnt)
         daughter = daughter * kplus  # Heaviside step function
         fourier_factor = (4 * np.pi) / (k0 + np.sqrt(2 + k0 ** 2))  # Scale-->Fourier [Sec.3h]
@@ -187,7 +189,7 @@ def wave_bases(mother, k, scale, param):
         m = param
         expnt = -scale * k * kplus
         norm = np.sqrt(scale * k[1]) * (2 ** m / np.sqrt(m *
-            np.prod(np.arange(1, (2 * m))))) * np.sqrt(n)
+                                                         np.prod(np.arange(1, (2 * m))))) * np.sqrt(n)
         daughter = norm * ((scale * k) ** m) * np.exp(expnt) * kplus
         fourier_factor = 4 * np.pi / (2 * m + 1)
         coi = fourier_factor * np.sqrt(2)
@@ -207,7 +209,8 @@ def wave_bases(mother, k, scale, param):
 
     return daughter, fourier_factor, coi, dofmin
 
-#-------------------------------------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------------------------------------
 # WAVE_SIGNIF  Significance testing for the 1D Wavelet transform WAVELET
 #
 #   SIGNIF = wave_signif(Y,DT,SCALE,SIGTEST,LAG1,SIGLVL,DOF,MOTHER,PARAM)
@@ -265,7 +268,7 @@ def wave_bases(mother, k, scale, param):
 
 
 def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
-    dof=None, mother='MORLET', param=None, gws=None):
+                dof=None, mother='MORLET', param=None, gws=None):
     n1 = len(np.atleast_1d(Y))
     J1 = len(scale) - 1
     s0 = np.min(scale)
@@ -311,11 +314,11 @@ def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
 
     freq = dt / period  # normalized frequency
 
-    if gws is not None:   # use global-wavelet as background spectrum
+    if gws is not None:  # use global-wavelet as background spectrum
         fft_theor = gws
     else:
         fft_theor = (1 - lag1 ** 2) / (1 - 2 * lag1 *
-            np.cos(freq * 2 * np.pi) + lag1 ** 2)  # [Eqn(16)]
+                                       np.cos(freq * 2 * np.pi) + lag1 ** 2)  # [Eqn(16)]
         fft_theor = variance * fft_theor  # include time-series variance
 
     signif = fft_theor
@@ -331,7 +334,7 @@ def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
             dof = np.zeros(J1) + dof
         dof[dof < 1] = 1
         dof = dofmin * np.sqrt(1 + (dof * dt / gamma_fac / scale) ** 2)  # [Eqn(23)]
-        dof[dof < dofmin] = dofmin   # minimum DOF is dofmin
+        dof[dof < dofmin] = dofmin  # minimum DOF is dofmin
         for a1 in range(0, J1 + 1):
             chisquare = chisquare_inv(siglvl, dof[a1]) / dof[a1]
             signif[a1] = fft_theor[a1] * chisquare
@@ -340,7 +343,7 @@ def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
             print('ERROR: DOF must be set to [S1,S2], the range of scale-averages')
         if Cdelta == -1:
             print('ERROR: Cdelta & dj0 not defined for ' +
-                    mother + ' with param = ' + str(param))
+                  mother + ' with param = ' + str(param))
 
         s1 = dof[0]
         s2 = dof[1]
@@ -351,7 +354,7 @@ def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
         Savg = 1. / np.sum(1. / scale[avg])  # [Eqn(25)]
         Smid = np.exp((np.log(s1) + np.log(s2)) / 2.)  # power-of-two midpoint
         dof = (dofmin * navg * Savg / Smid) * \
-                np.sqrt(1 + (navg * dj / dj0) ** 2)  # [Eqn(28)]
+              np.sqrt(1 + (navg * dj / dj0) ** 2)  # [Eqn(28)]
         fft_theor = Savg * np.sum(fft_theor[avg] / scale[avg])  # [Eqn(27)]
         chisquare = chisquare_inv(siglvl, dof) / dof
         signif = (dj * dt / Cdelta / Savg) * fft_theor * chisquare  # [Eqn(26)]
@@ -360,7 +363,8 @@ def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
 
     return signif
 
-#-------------------------------------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------------------------------------
 # CHISQUARE_INV  Inverse of chi-square cumulative distribution function (cdf).
 #
 #   X = chisquare_inv(P,V) returns the inverse of chi-square cdf with V
@@ -373,7 +377,6 @@ def wave_signif(Y, dt, scale, sigtest=0, lag1=0.0, siglvl=0.95,
 
 
 def chisquare_inv(P, V):
-
     if (1 - P) < 1E-4:
         print('P must be < 0.9999')
 
@@ -388,7 +391,7 @@ def chisquare_inv(P, V):
 
     while (X + TOLERANCE) >= MAXX:  # should only need to loop thru once
         MAXX = MAXX * 10.
-    # this calculates value for X, NORMALIZED by V
+        # this calculates value for X, NORMALIZED by V
         X = fminbound(chisquare_solve, MINN, MAXX, args=(P, V), xtol=TOLERANCE)
         MINN = MAXX
 
@@ -396,28 +399,28 @@ def chisquare_inv(P, V):
 
     return X  # end of code
 
-#-------------------------------------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------------------------------------
 # CHISQUARE_SOLVE  Internal function used by CHISQUARE_INV
-    #
-    #   PDIFF=chisquare_solve(XGUESS,P,V)  Given XGUESS, a percentile P,
-    #   and degrees-of-freedom V, return the difference between
-    #   calculated percentile and P.
+#
+#   PDIFF=chisquare_solve(XGUESS,P,V)  Given XGUESS, a percentile P,
+#   and degrees-of-freedom V, return the difference between
+#   calculated percentile and P.
 
-    # Uses GAMMAINC
-    #
-    # Written January 1998 by C. Torrence
+# Uses GAMMAINC
+#
+# Written January 1998 by C. Torrence
 
-    # extra factor of V is necessary because X is Normalized
+# extra factor of V is necessary because X is Normalized
 
 
 def chisquare_solve(XGUESS, P, V):
+    PGUESS = gammainc(V / 2, V * XGUESS / 2)  # incomplete Gamma function
 
-    PGUESS = gammainc(V/2, V*XGUESS/2)  # incomplete Gamma function
-
-    PDIFF = np.abs(PGUESS - P)            # error in calculated P
+    PDIFF = np.abs(PGUESS - P)  # error in calculated P
 
     TOL = 1E-4
-    if PGUESS >= 1-TOL:  # if P is very close to 1 (i.e. a bad guess)
-        PDIFF = XGUESS   # then just assign some big number like XGUESS
+    if PGUESS >= 1 - TOL:  # if P is very close to 1 (i.e. a bad guess)
+        PDIFF = XGUESS  # then just assign some big number like XGUESS
 
     return PDIFF

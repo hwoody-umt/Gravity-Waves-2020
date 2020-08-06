@@ -57,18 +57,22 @@ for file in os.listdir( userInput.get('dataSource') ):
         regionContour = findPeakContour( wavelets.get('power'), peaks[0] )
 
 
-        # Get inverted regional maximums from both methods
+        # Get inverted regional maxima from both methods
         waveRectangle = invertWaveletTransform( regionRectangle, wavelets )
         waveContour = invertWaveletTransform( regionContour, wavelets )
 
         # Perform analysis to find wave information
-        parametersRectangle = getParameters(data, waveRectangle, spatialResolution, peaks[0, 1], wavelets.get('wavelengths')[peaks[0, 0]])
-        parametersContour = getParameters(data, waveContour, spatialResolution, peaks[0, 1], wavelets.get('wavelengths')[peaks[0, 0]])
+        parametersRectangle = getParameters(data, waveRectangle, spatialResolution, peaks[0, 1],
+                                            wavelets.get('wavelengths')[peaks[0, 0]])
+        parametersContour = getParameters(data, waveContour, spatialResolution, peaks[0, 1],
+                                            wavelets.get('wavelengths')[peaks[0, 0]])
 
         # Pick the method that performed the best
         if parametersRectangle and parametersContour:
             # If both methods got results, have the user pick based on the hodographs
-            parameters, region = compareMethods(waveRectangle, waveContour, parametersRectangle, parametersContour, regionRectangle, regionContour)
+            parameters, region = compareMethods(waveRectangle, waveContour, parametersRectangle,
+                                                parametersContour, regionRectangle, regionContour)
+
         elif parametersContour:
             parameters = parametersContour
             region = regionContour
@@ -84,7 +88,8 @@ for file in os.listdir( userInput.get('dataSource') ):
     outputWaveParameters(userInput, waves, file)
 
     # Also, build and show/save power surface plot
-    drawPowerSurface(userInput, file, wavelets, data['Alt']/1000, plottingInfo.get('regions'), plottingInfo.get('peaks'), plottingInfo.get('colors'))
+    drawPowerSurface(userInput, file, wavelets, data['Alt']/1000, plottingInfo.get('regions'),
+                     plottingInfo.get('peaks'), plottingInfo.get('colors'))
 
     # Done with this radiosonde flight, print 'finished' and continue to next file
     print("\nFinished file analysis")
