@@ -203,7 +203,8 @@ def drawPowerSurface(userInput, fileName, wavelets, altitudes, plotter, peaksToP
     # The 'plotter' is a boolean mask, so levels is set to 0.5 to be between 0 and 1
     plt.contour(altitudes, yScale, plotter, colors='red', levels=[0.5])
     # Make a scatter plot of the identified peaks, coloring them according to which ones were confirmed as waves
-    plt.scatter(altitudes[peaksToPlot.T[1]], yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
+    if len(peaksToPlot) > 0:
+        plt.scatter(altitudes[peaksToPlot.T[1]], yScale[peaksToPlot.T[0]], c=colorsToPlot, marker='.')
     # Plot the cone of influence in black
     plt.plot(altitudes, wavelets.get('coi'), color='black')
     # Set the axis scales, labels, and titles
@@ -767,9 +768,9 @@ def findPeaks(power):
     print("\nSearching for local maxima in power surface", end='')
 
     # Find and return coordinates of local maximums
-    cutOff = 0.05  # Disregard maximums less than cutOff * max power, empirically determined via trial & error
+    cutOff = 500  # Disregard maximums less than this m^2/s^2, empirically determined via trial & error
     # Finds local maxima based on cutOff, margin
-    peaks = peak_local_max(power, threshold_rel=cutOff)
+    peaks = peak_local_max(power, threshold_abs=cutOff)
 
     print()  # Newline for next console output
 
@@ -911,16 +912,16 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # Potential temperature, needs to be appropriately sourced and verified
     pt = (1000.0 ** 0.286) * (data['T'] + 273.15) / (data['P'] ** 0.286)  # kelvin
 
-    # Stokes parameters from Murphy (2014) appendix A
+    # Stokes parameters from Murphy (2014) appendix A and Eckerman (1996) equations 1-5
     I = np.mean(uTrim ** 2) + np.mean(vTrim ** 2)
     D = np.mean(uTrim ** 2) - np.mean(vTrim ** 2)
     P = np.mean(2 * uTrim * vTrim)
     Q = np.mean(2 * uTrim * vHilbert)
     degPolar = np.sqrt(D ** 2 + P ** 2 + Q ** 2) / I
-
-    # Check the covariance to perform additional filtering
+    # Check the variance to perform additional filtering
 
     # Tests to rule out waves that don't make sense. These restrictions seem fairly lax, so we should look at others
+    # From Murphy (2014) section 2 paragraph 3
     if np.abs(P) < 0.05 or np.abs(Q) < 0.05 or degPolar < 0.5 or degPolar > 1.0:
         return {}
 
@@ -937,13 +938,19 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # Alternative method that yields similar results (from Neelakantan et. al, 2019, Equation 8) is:
     # axialRatio = np.abs(1 / np.tan(0.5 * np.arcsin(Q / (degPolar * I))))
 
+    # This equation is from Tom's code, but needs to be sourced because it gives different results than below
+    # gamma = np.mean(uvComp[0] * np.conj(tTrim)) /
+    #                           np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
 
-    gamma = np.mean(uvComp[0] * np.conj(tTrim)) / np.sqrt(np.mean(np.abs(uvComp[0]) ** 2) * np.mean(np.abs(tTrim) ** 2))
+    # This comes from Marlton (2016) equation 2.5
+    gamma = np.mean( uvComp[0] * np.gradient(tTrim, spatialResolution) )
     if np.angle(gamma) < 0:
         theta = theta + np.pi
 
-    # Coriolis frequency
-    coriolisF = np.abs( 2 * 7.2921 * 10 ** (-5) * np.sin(np.mean(data['Lat.']) * 180 / np.pi) )
+    # Coriolis frequency, negative in the southern hemisphere (Murphy 2014 section 3.2 paragraph 1)
+    # Equation given by wikipedia (https://en.wikipedia.org/wiki/Coriolis_frequency), but I should
+    # get a peer reviewed source to verify the equation
+    coriolisF = abs( 2 * 7.2921 * 10 ** (-5) * np.sin(data.iloc[waveAltIndex, data.columns.get_loc('Lat.')] * np.pi / 180) )
 
     # Intrinsic frequency, from Murphy (2014) table 1
     intrinsicF = coriolisF * axialRatio
@@ -954,8 +961,7 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # verified with peer reviewed sources to confirm
     bvF2 = np.abs( 9.81 / pt * np.gradient(pt, spatialResolution) )  # Brunt-vaisala frequency squared
 
-    # This code finds the mean across region bvMean = np.mean(np.array(bvF2)[np.nonzero(region.sum(axis=0))])
-
+    # This code finds the mean across wave region bvMean = np.mean(np.array(bvF2)[np.nonzero(region.sum(axis=0))])
     # However, the current code uses the Brunt-vaisala frequency squared at the wave altitude instead,
     # which is a departure from Murphy (2014), but which I defend by claiming that finding the BV frequency,
     # altitude, longitude, latitude, etc. at the strongest wave resemblance in our data (the power surface
@@ -965,8 +971,8 @@ def getParameters(data, wave, spatialResolution, waveAltIndex, wavelength):
     # which I don't think is justified based on the appearance of many power surfaces.
     bvPeak = np.array(bvF2)[waveAltIndex]
 
-
-    if not np.sqrt(bvPeak) > intrinsicF > coriolisF:
+    # Check that the axial ratio is positive, and that the intrinsic frequency is less than Brunt Vaisala
+    if not np.sqrt(bvPeak) > abs(intrinsicF) > abs(coriolisF):
         return {}
 
 

@@ -40,6 +40,7 @@ def getUserInputUnits():
 
     return lower(userInput)
 
+
 # Get the data source, units, 2d/3d, and title of plot from user
 def getAllUserInput():
     dataSource = getUserInputFile("Enter path to data input directory:")
@@ -57,7 +58,6 @@ def getAllUserInput():
     }
 
     return results
-
 
 
 # First, get the user input
